@@ -875,6 +875,10 @@ const Real={
     S.token=rec.token;S.devId=dev;
     return{id:x.Id,name:x.Name,img:this.userImg(x),token:rec.token,admin:!!x.Policy?.IsAdministrator,dev};
   },
+  async allUsers(rec){
+    const us=await jf('/Users',{token:rec.token,dev:rec.dev||devFor(rec.name)});
+    return(us||[]).filter(x=>!x.Policy?.IsDisabled).map(x=>({id:x.Id,name:x.Name,hasPw:!!x.HasPassword,img:this.userImg(x)}));
+  },
   async adminAuth(name,pw){
     const dev=devFor('admin-'+name);
     const r=await jf('/Users/AuthenticateByName',{method:'POST',token:'',dev,body:{Username:name,Pw:pw||''}});
@@ -1220,9 +1224,19 @@ async function startIntro(name,withSound){
   scr.classList.add('out');await sleep(400);
   if(u)enterApp(u);else showProfiles();
 }
+/* the sign-in Jellyfin's own web app saved for this server (same origin when served by the plugin) */
+function jfWebSession(){
+  if(S.demo||typeof HOSTED==='undefined'||!HOSTED)return null;
+  try{
+    const c=JSON.parse(localStorage.getItem('jellyfin_credentials')||'null'),list=(c&&c.Servers)||[];
+    const norm=a=>String(a||'').replace(/\/+$/,'').toLowerCase(),here=norm(S.server);
+    const s=list.find(x=>x.AccessToken&&x.UserId&&[x.ManualAddress,x.LocalAddress,x.RemoteAddress].some(a=>norm(a)===here))||list.find(x=>x.AccessToken&&x.UserId);
+    return s?{id:s.UserId,name:'',token:s.AccessToken,dev:localStorage.getItem('_deviceId2')||''}:null;
+  }catch{return null}
+}
 async function autoSession(){
-  const o=SESS.get();const r=o.last&&o.users[o.last];if(!r||!r.token)return null;
-  try{return await B.resumeSession(r)}catch(e){if(e.status===401)SESS.forget(r.id);return null}
+  const o=SESS.get();const r=(o.last&&o.users[o.last])||jfWebSession();if(!r||!r.token)return null;
+  try{return await B.resumeSession(r)}catch(e){if(e.status===401&&r.name)SESS.forget(r.id);return null}
 }
 
 /* ---------- profiles ---------- */
@@ -1230,6 +1244,9 @@ let editing=false;
 async function loadProfiles(){
   const pub=await B.users().catch(()=>[]);const saved=Object.values(SESS.get().users);
   const list=[...pub];
+  /* an admin can see users hidden from the login screen */
+  const adm=saved.find(r=>r.admin&&r.token);
+  if(adm&&B.allUsers){try{for(const u of await B.allUsers(adm))if(!list.some(x=>x.id===u.id))list.push(u)}catch{}}
   for(const r of saved)if(!list.some(u=>u.id===r.id))list.push({id:r.id,name:r.name,img:r.img,hasPw:false,saved:true});
   for(const u of list){const r=SESS.user(u.id);u.signedIn=!!(r&&r.token)}
   S.users=list;return list;
