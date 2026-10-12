@@ -1,0 +1,12 @@
+[
+  {
+    "guid": "fd906ae7-849f-4160-825f-f753a3571ccc",
+    "name": "Orbit Lantern",
+    "description": "Alternative web interface. Open /lantern on this server.",
+    "overview": "Alternative web interface",
+    "owner": "neelious",
+    "category": "General",
+    "imageUrl": "",
+    "versions": []
+  }
+]

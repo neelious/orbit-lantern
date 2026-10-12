@@ -1,0 +1,72 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version from tag
+        id: v
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          IFS=. read -r a b c d <<< "$tag"
+          echo "ver=${a:-0}.${b:-0}.${c:-0}.${d:-0}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: dotnet build Lantern/Lantern.csproj -c Release -p:Version=${{ steps.v.outputs.ver }} -p:AssemblyVersion=${{ steps.v.outputs.ver }} -p:FileVersion=${{ steps.v.outputs.ver }}
+
+      - name: Package
+        id: pkg
+        run: |
+          zip="lantern_${{ steps.v.outputs.ver }}.zip"
+          (cd Lantern/bin/Release/net10.0 && zip -j "$GITHUB_WORKSPACE/$zip" Lantern.dll)
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "md5=$(md5sum "$zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.pkg.outputs.zip }}" --title "$GITHUB_REF_NAME" --notes "Build ${{ steps.v.outputs.ver }}"
+
+      - name: Update manifest
+        env:
+          VER: ${{ steps.v.outputs.ver }}
+          MD5: ${{ steps.pkg.outputs.md5 }}
+          URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pkg.outputs.zip }}
+        run: |
+          git fetch origin main
+          git checkout main
+          python3 - <<'PY'
+          import json, os, datetime
+          m = json.load(open('manifest.json'))
+          p = m[0]
+          p['versions'] = [v for v in p['versions'] if v['version'] != os.environ['VER']]
+          p['versions'].insert(0, {
+              'version': os.environ['VER'],
+              'changelog': 'Build ' + os.environ['VER'],
+              'targetAbi': '12.1.0.0',
+              'sourceUrl': os.environ['URL'],
+              'checksum': os.environ['MD5'],
+              'timestamp': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+          })
+          json.dump(m, open('manifest.json', 'w'), indent=2)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "manifest: ${{ steps.v.outputs.ver }}"
+          git push origin main

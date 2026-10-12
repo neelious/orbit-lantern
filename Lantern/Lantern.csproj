@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Lantern</RootNamespace>
+    <AssemblyName>Lantern</AssemblyName>
+    <Version>1.0.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Built against 12.1 so it loads on 12.1 and 12.2 servers. -->
+    <PackageReference Include="Jellyfin.Controller" Version="12.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.1.0" ExcludeAssets="runtime" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\index.html" LogicalName="Lantern.index.html" />
+  </ItemGroup>
+
+</Project>

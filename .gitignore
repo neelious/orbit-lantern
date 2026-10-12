@@ -1,0 +1,5 @@
+bin/
+obj/
+*.zip
+.DS_Store
+.claude/
