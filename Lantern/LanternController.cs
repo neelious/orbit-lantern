@@ -25,4 +25,20 @@ public class LanternController : ControllerBase
         Response.Headers.CacheControl = "no-cache";
         return File(stream, "text/html; charset=utf-8");
     }
+
+    /// <summary>Small script the web client loads first; it switches regular pages over to Lantern.</summary>
+    [HttpGet("boot.js")]
+    [AllowAnonymous]
+    [Produces("application/javascript")]
+    public IActionResult GetBoot()
+    {
+        var stream = typeof(LanternController).Assembly.GetManifestResourceStream("Lantern.boot.js");
+        if (stream is null)
+        {
+            return NotFound();
+        }
+
+        Response.Headers.CacheControl = "no-cache";
+        return File(stream, "application/javascript; charset=utf-8");
+    }
 }

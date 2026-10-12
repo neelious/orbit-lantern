@@ -1388,9 +1388,12 @@ function setupNav(){
     `<div class="mi" data-act="profiles"><span>Manage Profiles</span></div><div class="mi" data-act="account"><span>Account &amp; Settings</span></div><hr>`+
     jfl('mypreferencesmenu','Jellyfin Settings')+jfl('mypreferencesplayback','Playback Settings')+jfl('mypreferencessubtitles','Subtitle Settings')+jfl('mypreferencesdisplay','Display Settings')+
     (S.user.admin?jfl('dashboard','Server Dashboard')+jfl('dashboard/users','Manage Users'):'')+
-    `<div class="mi" data-act="switch"><span>Switch Server</span></div><hr><div class="mi so" data-act="out"><span>Sign out of ${esc(S.serverName)}</span></div>`;
+    `${typeof HOSTED!=='undefined'&&HOSTED?'<div class="mi" data-act="classic"><span>Switch to classic Jellyfin</span></div>':''}<div class="mi" data-act="switch"><span>Switch Server</span></div><hr><div class="mi so" data-act="out"><span>Sign out of ${esc(S.serverName)}</span></div>`;
 }
-function openWeb(route){const u=webUrl(route);if(u)window.open(u,'_blank','noopener');else toast('Jellyfin settings are available when connected to a real server')}
+function openWeb(route){const u=webUrl(route);if(!u){toast('Jellyfin settings are available when connected to a real server');return}
+  /* inside the Jellyfin app there are no tabs, so open settings in place (they stay in classic Jellyfin) */
+  if(typeof HOSTED!=='undefined'&&HOSTED)location.href=u;else window.open(u,'_blank','noopener')}
+function goClassic(){try{localStorage.setItem('lantern.classic','1')}catch{}location.href=`${S.server}/web/`}
 $('#n-menu').addEventListener('click',async e=>{
   const mi=e.target.closest('.mi');if(!mi)return;e.stopPropagation();closeMenus();
   if(mi.dataset.web){openWeb(mi.dataset.web);return}
@@ -1398,6 +1401,7 @@ $('#n-menu').addEventListener('click',async e=>{
   if(mi.dataset.sw!=null){pickProfile(+mi.dataset.sw);return}
   const a=mi.dataset.act;
   if(a==='account'){go('account');return}
+  if(a==='classic'){goClassic();return}
   if(a==='profiles'){showProfiles(true);return}
   if(a==='out'){await B.logout();SESS.forget(S.user.id);S.user=null;showProfiles()}
   if(a==='switch'){SESS.clearLast();LS.del('server');S.demo=false;S.users=[];$('#c-url').value='';show('s-connect')}
@@ -2000,7 +2004,7 @@ addEventListener('beforeunload',()=>{if(P.src)B.report('stop',P.src,M.currentTim
    Boot
    ===================================================================== */
 const HOSTED=(()=>{const m=location.pathname.match(/^(.*?)\/lantern(\/(index\.html)?)?$/i);return m&&/^https?:$/.test(location.protocol)?location.origin+m[1]:null})();
-if(HOSTED)document.documentElement.classList.add('hosted');
+if(HOSTED){document.documentElement.classList.add('hosted');try{localStorage.removeItem('lantern.classic')}catch{}}
 (async()=>{
   if(HOSTED){
     $('#c-url').value=HOSTED;
