@@ -47,10 +47,14 @@ jobs:
         env:
           VER: ${{ steps.v.outputs.ver }}
           MD5: ${{ steps.pkg.outputs.md5 }}
-          URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pkg.outputs.zip }}
+          # served from raw.githubusercontent.com, which servers reach even when GitHub's release-asset host is blocked
+          URL: https://raw.githubusercontent.com/${{ github.repository }}/main/dist/${{ steps.pkg.outputs.zip }}
         run: |
           git fetch origin main
           git checkout main
+          mkdir -p dist
+          cp "${{ steps.pkg.outputs.zip }}" dist/
+          git add -f dist/"${{ steps.pkg.outputs.zip }}"
           python3 - <<'PY'
           import json, os, datetime
           m = json.load(open('manifest.json'))
@@ -68,5 +72,5 @@ jobs:
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "manifest: ${{ steps.v.outputs.ver }}"
+          git commit -am "release: ${{ steps.v.outputs.ver }}"
           git push origin main

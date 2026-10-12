@@ -3,3 +3,4 @@ obj/
 *.zip
 .DS_Store
 .claude/
+!dist/*.zip
