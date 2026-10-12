@@ -513,40 +513,27 @@ footer .lnk{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20p
   .vol input{display:none}
 }
 html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!important}
-/* phones: no full-screen button (the player rotates and fills the screen itself), tighter controls */
-@media (hover:none) and (pointer:coarse){
-  #p-fs{display:none!important}
-  .vol input{display:none}
-  #player .bm{padding:0 16px max(14px,env(safe-area-inset-bottom))}
-  #player .tp{padding:max(14px,env(safe-area-inset-top)) 16px 14px}
-  .cr{gap:14px;margin-top:6px}
-  .cr button{padding:4px}
-  .cr button svg{width:30px;height:30px}
-  .cr .pt{font-size:14px}
+/* phones: big transport buttons in the middle, title on top, the rest spread along the bottom so everything fits */
+@media (hover:none) and (pointer:coarse),(max-width:700px){
+  #player .bm{padding:0 14px max(12px,env(safe-area-inset-bottom))}
+  #player .tp{padding:max(12px,env(safe-area-inset-top)) 12px 12px}
+  #player .tp button svg{width:32px;height:32px}
+  .vol{display:none!important}
+  .cr{justify-content:space-around;gap:4px;margin-top:4px}
+  .cr button{padding:8px}
+  .cr button svg{width:28px;height:28px}
+  .cr #p-pp,.cr #p-b10,.cr #p-f10{position:absolute;top:50%;left:50%;padding:10px;border-radius:50%}
+  .cr #p-pp{transform:translate(-50%,-50%)}
+  .cr #p-pp svg{width:64px;height:64px}
+  .cr #p-b10{transform:translate(calc(-50% - min(30vw,170px)),-50%)}
+  .cr #p-f10{transform:translate(calc(-50% + min(30vw,170px)),-50%)}
+  .cr #p-b10 svg,.cr #p-f10 svg{width:44px;height:44px}
+  .cr .pt{position:absolute;top:max(18px,env(safe-area-inset-top));left:64px;right:64px;font-size:15px;text-align:center;flex:none}
+  .cr .pt span{display:block;margin:2px 0 0;font-size:13px}
   .pg{height:36px}
   .bar{height:5px}
   .pg .kn{transform:scale(1)}
 }
-@media (hover:none) and (pointer:coarse) and (orientation:portrait){.cr .pt{display:none}}
-/* ---------- TV / remote control ---------- */
-html.tv{cursor:none}
-html.tv :focus{outline:3px solid #fff;outline-offset:3px}
-html.tv .slider{padding-top:10px;padding-bottom:10px}
-html.tv .card .box{transition:transform .2s ease,box-shadow .2s}
-html.tv .card .box:focus{outline:none;transform:scale(1.08);box-shadow:0 0 0 3px #fff,0 8px 24px rgba(0,0,0,.7);z-index:3}
-html.tv .row.top10 .card .box:focus{box-shadow:none}
-html.tv .row.top10 .card .box:focus .pst{box-shadow:0 0 0 3px #fff}
-html.tv .prof:focus{outline:none;color:#fff}
-html.tv .prof:focus .av{outline-color:#fff}
-html.tv .bt:focus{outline:none;box-shadow:0 0 0 3px #fff;transform:scale(1.05)}
-html.tv .bt.play:focus{background:#fff}
-html.tv .bt.mi2:focus{background:rgba(109,109,110,.9)}
-html.tv .epi:focus,html.tv .menu .mi:focus{outline:none;background:#333}
-html.tv .mlc:focus{outline:none;box-shadow:0 0 0 3px #fff}
-html.tv #nav .links a:focus{outline:none;color:#fff;text-decoration:underline;text-underline-offset:6px}
-html.tv #player .cr button:focus,html.tv #player .tp button:focus{outline:none}
-html.tv #player .cr button:focus svg,html.tv #player .tp button:focus svg{transform:scale(1.3);filter:drop-shadow(0 0 6px rgba(255,255,255,.8))}
-html.tv .pp button:focus{outline:none;background:rgba(255,255,255,.12);color:#fff}
 </style>
 </head>
 <body class="fonts-pending">
@@ -1902,7 +1889,7 @@ function selectAudio(index){
 /* ---------- phones: turn sideways while playing ---------- */
 const isPhone=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
 function phoneLandscape(on){
-  if(!isPhone())return;
+  if(!isPhone())return;P.fsOn=on;
   try{
     /* inside the official Android app, its native bridge rotates the screen and hides the system bars */
     const N=window.NativeInterface;
@@ -2024,7 +2011,10 @@ function toggle(){if(P.panel){closePanel();return}if(PL.classList.contains('erro
 const skip=s=>{M.currentTime=clamp(M.currentTime+s,0,(M.duration||1e9)-1);renderSubs(true);wake()};
 $('#p-pp').onclick=toggle;$('#p-b10').onclick=()=>skip(-10);$('#p-f10').onclick=()=>skip(10);
 [V,DC].forEach(el=>{el.addEventListener('click',toggle);el.addEventListener('dblclick',()=>$('#p-fs').click())});
-$('#p-fs').onclick=()=>document.fullscreenElement?document.exitFullscreen():PL.requestFullscreen?.().catch(()=>{});
+$('#p-fs').onclick=()=>{
+  if(isPhone()){P.fsOn=!(P.fsOn??true);phoneLandscape(P.fsOn);return}
+  document.fullscreenElement?document.exitFullscreen():PL.requestFullscreen?.().catch(()=>{});
+};
 $('#p-next').onclick=$('#p-nexte').onclick=()=>{if(P.next){const n=P.next;teardown(true);play(n)}};
 const setVolIcon=()=>$('#p-vb').innerHTML=M.muted||M.volume===0?I.mute:I.vol;
 $('#p-vol').oninput=e=>{M.volume=+e.target.value;M.muted=M.volume===0;V.muted=M.muted;setVolIcon()};
