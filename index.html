@@ -513,6 +513,21 @@ footer .lnk{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20p
   .vol input{display:none}
 }
 html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!important}
+/* phones: no full-screen button (the player rotates and fills the screen itself), tighter controls */
+@media (hover:none) and (pointer:coarse){
+  #p-fs{display:none!important}
+  .vol input{display:none}
+  #player .bm{padding:0 16px max(14px,env(safe-area-inset-bottom))}
+  #player .tp{padding:max(14px,env(safe-area-inset-top)) 16px 14px}
+  .cr{gap:14px;margin-top:6px}
+  .cr button{padding:4px}
+  .cr button svg{width:30px;height:30px}
+  .cr .pt{font-size:14px}
+  .pg{height:36px}
+  .bar{height:5px}
+  .pg .kn{transform:scale(1)}
+}
+@media (hover:none) and (pointer:coarse) and (orientation:portrait){.cr .pt{display:none}}
 </style>
 </head>
 <body class="fonts-pending">
@@ -1751,7 +1766,7 @@ async function play(it){
   closePanel();P.sub=null;P.cues=[];renderSubs(true);
   PL.className='on loading';$('#p-err').textContent='';$('#p-nexte').classList.remove('on');$('#p-fl').style.width='0';$('#p-bf').style.width='0';$('#p-kn').style.left='0';$('#p-tl').textContent='';
   lockScroll(true);
-  V.poster=it.backdrop||it.thumb||'';applyRatio();
+  V.poster=it.backdrop||it.thumb||'';applyRatio();phoneLandscape(true);
   try{
     const target=await cachedTarget(it);if(!target)throw new Error('Nothing to play yet.');
     if(target.thumb&&target.type==='Episode')V.poster=target.thumb;
@@ -1810,7 +1825,7 @@ function teardown(report=true){
 function closePlayer(){
   if(!PL.classList.contains('on'))return;P.tok++;
   const it=P.src?.item,dur=M.duration;if(it&&dur&&isFinite(dur)){it.posTicks=M.currentTime*1e7;it.progress=M.currentTime/dur*100}
-  teardown(true);P.src=null;PL.className='';DC.style.display='none';V.poster='';renderInfo();TGT.clear();
+  teardown(true);P.src=null;PL.className='';DC.style.display='none';phoneLandscape(false);V.poster='';renderInfo();TGT.clear();
   closePanel();P.sub=null;P.cues=[];renderSubs(true);
   lockScroll(MD.classList.contains('on'));
   if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
@@ -1861,6 +1876,24 @@ function selectAudio(index){
   const tr=(P.src.tracks?.audio||[]).find(a=>a.index===index);if(tr?.lang)setPref('audioLang',tr.lang);
   if(P.src.demo){P.src.audioSel=index;if(P.demo)P.demo.variant=index;renderPanel();return}
   switchSource({audioIndex:index,burnSub:P.src.burned??undefined}).then(renderPanel);
+}
+
+/* ---------- phones: turn sideways while playing ---------- */
+const isPhone=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
+function phoneLandscape(on){
+  if(!isPhone())return;
+  try{
+    /* inside the official Android app, its native bridge rotates the screen and hides the system bars */
+    const N=window.NativeInterface;
+    if(N&&typeof N.enableFullscreen==='function'){on?N.enableFullscreen():N.disableFullscreen?.();return}
+    if(on){
+      const fs=document.fullscreenElement?Promise.resolve():(PL.requestFullscreen||PL.webkitRequestFullscreen)?.call(PL,{navigationUI:'hide'});
+      Promise.resolve(fs).then(()=>screen.orientation?.lock?.('landscape')).catch(()=>{});
+    }else{
+      screen.orientation?.unlock?.();
+      if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+    }
+  }catch{}
 }
 
 /* ---------- quality, aspect ratio, playback info ---------- */
