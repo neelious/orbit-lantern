@@ -528,6 +528,25 @@ html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!im
   .pg .kn{transform:scale(1)}
 }
 @media (hover:none) and (pointer:coarse) and (orientation:portrait){.cr .pt{display:none}}
+/* ---------- TV / remote control ---------- */
+html.tv{cursor:none}
+html.tv :focus{outline:3px solid #fff;outline-offset:3px}
+html.tv .slider{padding-top:10px;padding-bottom:10px}
+html.tv .card .box{transition:transform .2s ease,box-shadow .2s}
+html.tv .card .box:focus{outline:none;transform:scale(1.08);box-shadow:0 0 0 3px #fff,0 8px 24px rgba(0,0,0,.7);z-index:3}
+html.tv .row.top10 .card .box:focus{box-shadow:none}
+html.tv .row.top10 .card .box:focus .pst{box-shadow:0 0 0 3px #fff}
+html.tv .prof:focus{outline:none;color:#fff}
+html.tv .prof:focus .av{outline-color:#fff}
+html.tv .bt:focus{outline:none;box-shadow:0 0 0 3px #fff;transform:scale(1.05)}
+html.tv .bt.play:focus{background:#fff}
+html.tv .bt.mi2:focus{background:rgba(109,109,110,.9)}
+html.tv .epi:focus,html.tv .menu .mi:focus{outline:none;background:#333}
+html.tv .mlc:focus{outline:none;box-shadow:0 0 0 3px #fff}
+html.tv #nav .links a:focus{outline:none;color:#fff;text-decoration:underline;text-underline-offset:6px}
+html.tv #player .cr button:focus,html.tv #player .tp button:focus{outline:none}
+html.tv #player .cr button:focus svg,html.tv #player .tp button:focus svg{transform:scale(1.3);filter:drop-shadow(0 0 6px rgba(255,255,255,.8))}
+html.tv .pp button:focus{outline:none;background:rgba(255,255,255,.12);color:#fff}
 </style>
 </head>
 <body class="fonts-pending">
@@ -1597,7 +1616,7 @@ function wireImgs(root){$$('img.im',root).forEach(im=>{if(im.complete&&im.natura
    Hover preview (FLIP: grows out of the exact card it came from)
    ===================================================================== */
 const PV=$('#pv');let hoverT=null,pv={box:null,hideT:null,from:null};
-const canHover=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
+const canHover=()=>!document.documentElement.classList.contains('tv')&&matchMedia('(hover:hover) and (pointer:fine)').matches;
 document.addEventListener('mouseover',e=>{
   if(!canHover()||!prefs().previews)return;
   const box=e.target.closest('#main .card .box[data-id]');
@@ -2032,6 +2051,96 @@ addEventListener('keydown',e=>{
   wake();
 });
 addEventListener('beforeunload',()=>{if(P.src)B.report('stop',P.src,M.currentTime,true)});
+
+/* =====================================================================
+   TV remote navigation (arrows move, OK selects, Back goes back)
+   ===================================================================== */
+const TV_UA=/Android TV|GoogleTV|BRAVIA|AFT[A-Z]|Web0S|webOS|NetCast|Tizen|SMART-TV|SmartTV|HbbTV|CrKey|Roku/i;
+function setTV(on){document.documentElement.classList.toggle('tv',on);if(on)hidePreview(true)}
+if(TV_UA.test(navigator.userAgent))setTV(true);
+addEventListener('mousemove',e=>{if(e.movementX||e.movementY){if(document.documentElement.classList.contains('tv')&&!TV_UA.test(navigator.userAgent))setTV(false)}},{passive:true});
+const BACK_KEYS=new Set(['Escape','GoBack','BrowserBack','Back']),BACK_CODES=new Set([461,10009,27,4]);
+const isBack=e=>BACK_KEYS.has(e.key)||BACK_CODES.has(e.keyCode)||(e.key==='Backspace'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName));
+const DIRS={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+const visible=el=>{if(!el.isConnected)return false;const r=el.getBoundingClientRect();if(r.width<2||r.height<2)return false;const cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&r.right>0&&r.left<innerWidth&&r.bottom>-innerHeight*3&&r.top<innerHeight*4};
+function tvScope(){
+  if(PL.classList.contains('on')){const pp=$('#p-panel.on');return{root:PL,sel:pp?'#p-panel button':'#player .cr button,#player .tp button'}}
+  if(DLG.classList.contains('on'))return{root:DLG,sel:'input,button,select'};
+  if(MD.classList.contains('on'))return{root:MD,sel:'button,select,.epi,.mlc,a[data-q],a[data-about]'};
+  const open=$('.dd.open .menu');if(open)return{root:open,sel:'.mi'};
+  if($('#s-profiles').classList.contains('on'))return{root:$('#s-profiles'),sel:'.prof,#p-manage,#p-alt'};
+  if($('#s-connect').classList.contains('on'))return{root:$('#s-connect'),sel:'input,button'};
+  return{root:document,sel:'#n-logo,#n-links a,.browse-dd>span,#srch-b,#srch-i,.acct .av,.hero .bt,#main .card .box[data-id],#main .acc a,#main .acc select,#main .acc button,#main .grid .card .box'};
+}
+function tvItems(){const{root,sel}=tvScope();return $$(sel,root).filter(visible).map(el=>{if(el.tabIndex<0&&!/^(BUTTON|INPUT|SELECT|A)$/.test(el.tagName))el.tabIndex=0;if(el.tagName==='A'&&!el.hasAttribute('href'))el.tabIndex=0;return el})}
+function tvFocus(el){
+  if(!el)return;el.focus({preventScroll:true});
+  const sc=el.closest('#modal')||el.closest('.dlg')||el.closest('.pp');
+  if(sc)el.scrollIntoView({block:'nearest',behavior:'smooth'});
+  else if(!el.closest('#nav')&&!el.closest('#player')){const r=el.getBoundingClientRect();const target=el.closest('.hero')?0:scrollY+r.top+r.height/2-innerHeight*.55;scrollTo({top:Math.max(0,target),behavior:'smooth'})}
+}
+function tvMoveInRow(el,dx){
+  const row=el.closest('.row');if(!row||!row.count)return false;
+  const boxes=$$('.card .box[data-id]',row),i=boxes.indexOf(el);if(i<0)return false;
+  const j=i+dx;if(j<0||j>=boxes.length)return true;
+  const page=Math.floor(j/S.per);
+  if(page!==row.page){row.page=page;row.moved=true;updateRowNav(row)}
+  tvFocus(boxes[j]);return true;
+}
+function tvMove(dx,dy){
+  const items=tvItems();if(!items.length)return;
+  const cur=document.activeElement;
+  if(!cur||!items.includes(cur)){tvFocus(items.find(e=>e.matches('.hero .bt.play,.prof,#p-pp,#modal .bt.play'))||items[0]);return}
+  if(dy===0&&cur.matches('#main .row .card .box')&&tvMoveInRow(cur,dx))return;
+  const a=cur.getBoundingClientRect(),ax=a.left+a.width/2,ay=a.top+a.height/2;
+  let best=null,bs=1e9;
+  for(const el of items){if(el===cur)continue;
+    const b=el.getBoundingClientRect();
+    if(el.closest('.row .slider')&&(b.left<-2||b.right>innerWidth+2))continue;
+    const bx=b.left+b.width/2,by=b.top+b.height/2;
+    const along=dx?(bx-ax)*dx:(by-ay)*dy;
+    if(along<=4)continue;
+    const edge=dx?(dx>0?b.left-a.right:a.left-b.right):(dy>0?b.top-a.bottom:a.top-b.bottom);
+    const across=dx?Math.abs(by-ay):Math.abs(bx-ax);
+    const score=Math.max(0,edge)+along*.3+across*(dx?2.5:.8);
+    if(score<bs){bs=score;best=el}}
+  if(best)tvFocus(best);
+}
+function tvBack(){
+  if(PL.classList.contains('on')){if(P.panel){closePanel();$('#p-set,#p-subs,#p-speed,#p-eps').length;return}if(PL.contains(document.activeElement)&&document.activeElement!==document.body){document.activeElement.blur();return}closePlayer();return}
+  if(DLG.classList.contains('on')){closeDialog();return}
+  if($('.dd.open')){closeMenus();return}
+  if(MD.classList.contains('on')){closeModal();return}
+  if($('#s-browse').classList.contains('on')){if(S.page!=='home'||scrollY>0){if(S.page!=='home')go('home');else{scrollTo({top:0,behavior:'smooth'});tvFocus($('.hero .bt.play'))}}return}
+}
+addEventListener('keydown',e=>{
+  const d=DIRS[e.key],back=isBack(e),ok=e.key==='Enter'||e.keyCode===13;
+  if(!d&&!back&&!ok)return;
+  const ae=document.activeElement,typing=ae&&/^(INPUT|TEXTAREA)$/.test(ae.tagName)&&ae.type!=='range';
+  if(d&&typing&&(e.key==='ArrowLeft'||e.key==='ArrowRight'))return;
+  if(d&&!document.documentElement.classList.contains('tv'))setTV(true);
+  const inPlayer=PL.classList.contains('on');
+  if(inPlayer){
+    const onCtl=ae&&PL.contains(ae)&&ae.tagName==='BUTTON';
+    if(back){e.preventDefault();e.stopImmediatePropagation();tvBack();return}
+    if(!onCtl&&!P.panel){
+      if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();e.stopImmediatePropagation();wake();tvFocus($('#p-pp'));return}
+      return; /* left/right seek and OK toggle are handled by the player */
+    }
+    if(d){e.preventDefault();e.stopImmediatePropagation();wake();tvMove(d[0],d[1]);return}
+    if(ok){e.stopImmediatePropagation();wake();return} /* native button click */
+    return;
+  }
+  if(back){if(typing&&e.key==='Backspace')return;e.preventDefault();tvBack();return}
+  if(d){if(ae&&ae.tagName==='SELECT'&&(e.key==='ArrowUp'||e.key==='ArrowDown'))return;e.preventDefault();tvMove(d[0],d[1]);return}
+  if(ok&&ae&&ae!==document.body&&!/^(BUTTON|INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)){e.preventDefault();ae.click()}
+},true);
+/* when a new screen or panel appears on a TV, put focus somewhere sensible */
+new MutationObserver(()=>{
+  if(!document.documentElement.classList.contains('tv'))return;
+  const ae=document.activeElement;if(ae&&ae!==document.body&&ae.isConnected&&tvItems().includes(ae))return;
+  clearTimeout(window.__tvT);window.__tvT=setTimeout(()=>{const ae2=document.activeElement;if(ae2&&ae2!==document.body&&tvItems().includes(ae2))return;const it=tvItems();tvFocus(it.find(e=>e.matches('.hero .bt.play,#modal .bt.play,.prof,#dlg-f input,#dlg-f button,#p-panel button.sel'))||it.find(e=>e.matches('#main .card .box'))||it[0])},250);
+}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
 
 /* =====================================================================
    Boot
