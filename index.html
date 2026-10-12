@@ -1290,6 +1290,8 @@ async function showProfiles(edit){
   $('#p-list').innerHTML='<div class="spin"></div>';
   await loadProfiles();
   renderProfiles();setEditing(!!edit);
+  /* nobody signed in on this device yet: go straight to sign in */
+  if(!edit&&!S.demo&&!Object.values(SESS.get().users).some(r=>r.token))dlgSignIn();
 }
 function renderProfiles(){
   $('#p-list').innerHTML=S.users.map((u,i)=>`<a class="prof" tabindex="0" data-i="${i}"><div class="av">${avatarHTML(u)}<div class="edit-ov">${I.pencil}</div></div><div class="nm">${esc(u.name)}</div>${u.hasPw&&!u.signedIn?`<div class="lock">${I.lock}</div>`:''}</a>`).join('')+
@@ -2088,10 +2090,11 @@ function tvMoveInRow(el,dx){
   tvFocus(boxes[j]);return true;
 }
 function tvMove(dx,dy){
-  const items=tvItems();if(!items.length)return;
   const cur=document.activeElement;
-  if(!cur||!items.includes(cur)){tvFocus(items.find(e=>e.matches('.hero .bt.play,.prof,#p-pp,#modal .bt.play'))||items[0]);return}
-  if(dy===0&&cur.matches('#main .row .card .box')&&tvMoveInRow(cur,dx))return;
+  /* along a row first: a card that is sliding into view still counts */
+  if(dy===0&&cur&&cur.matches?.('#main .row .card .box')&&tvMoveInRow(cur,dx))return;
+  const items=tvItems();if(!items.length)return;
+  if(!cur||!(items.includes(cur)||cur.matches?.('#main .row .card .box'))){tvFocus(items.find(e=>e.matches('.hero .bt.play,.prof,#p-pp,#modal .bt.play'))||items[0]);return}
   const a=cur.getBoundingClientRect(),ax=a.left+a.width/2,ay=a.top+a.height/2;
   let best=null,bs=1e9;
   for(const el of items){if(el===cur)continue;
