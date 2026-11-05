@@ -12,6 +12,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -39,7 +41,14 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         tv = isTelevision();
+        createWebView();
+        if (savedInstanceState != null) web.restoreState(savedInstanceState);
+        else web.loadUrl(APP_URL);
+        if (tv) applyImmersive(true);
+    }
 
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    private void createWebView() {
         web = new WebView(this);
         web.setBackgroundColor(Color.BLACK);
         setContentView(web);
@@ -66,11 +75,23 @@ public class MainActivity extends Activity {
                 openExternal(u.toString());
                 return true;
             }
-        });
 
-        if (savedInstanceState != null) web.restoreState(savedInstanceState);
-        else web.loadUrl(APP_URL);
-        if (tv) applyImmersive(true);
+            /*
+             * Android killed the page (usually out of memory on a huge IPTV list). Without this the
+             * whole app closes; instead rebuild the view and reopen on the source screen.
+             */
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+                view.destroy();
+                playing = false;
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                createWebView();
+                web.loadUrl(APP_URL + "#recovered");
+                return true;
+            }
+        });
     }
 
     private boolean isTelevision() {

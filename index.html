@@ -570,6 +570,28 @@ html.has-live .browse-dd .lvnav{display:flex!important}
 #player.live .pg,#player.live #p-b10,#player.live #p-f10,#player.live #p-speed,#player.live #p-next,#player.live #p-eps{display:none!important}
 .cr .pt .lvb{color:var(--red);font-weight:700;margin-left:10px}
 html.tv #p-fs{display:none!important}
+/* ---------- IPTV library loader ---------- */
+#libload{position:fixed;inset:0;z-index:160;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px}
+#libload.on{display:flex}
+.ll-box{width:min(520px,94vw)}
+.ll-box .logo{font-size:40px;margin-bottom:18px}
+.ll-box h2{font-size:26px;font-weight:600;margin-bottom:18px}
+#ll-steps{list-style:none;margin-bottom:16px}
+#ll-steps li{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid #2a2a2a;color:#777;font-size:16px}
+#ll-steps li .l{flex:1}
+#ll-steps li .v{font-variant-numeric:tabular-nums;color:#b3b3b3}
+#ll-steps li .st{width:18px;height:18px;border-radius:50%;border:2px solid #444;flex:none}
+#ll-steps li.run{color:#fff}
+#ll-steps li.run .st{border-color:transparent;border-top-color:var(--red);border-right-color:var(--red);animation:spin .8s linear infinite}
+#ll-steps li.done{color:#ddd}
+#ll-steps li.done .st{border-color:#46d369;background:#46d369}
+#ll-bar{height:4px;background:#333;border-radius:2px;overflow:hidden}
+#ll-bar i{display:block;height:100%;width:0;background:var(--red);transition:width .4s}
+#ll-sum{margin-top:14px;font-size:17px;font-weight:600;color:#fff}
+#ll-err{margin-top:10px;color:#e87c03}
+#ll-close{display:none;margin-top:14px}
+#ll-err:not(:empty)~#ll-close{display:block}
+.ll-note{margin-top:16px;color:#777;font-size:13px}
 </style>
 </head>
 <body class="fonts-pending">
@@ -630,6 +652,7 @@ html.tv #p-fs{display:none!important}
   <div class="dbody"><form class="inner" id="dlg-f" autocomplete="on"></form></div>
 </div>
 
+<div id="libload"><div class="ll-box"><div class="logo" id="ll-logo"></div><h2 id="ll-title">Loading your library</h2><ul id="ll-steps"></ul><div id="ll-bar"><i></i></div><p id="ll-sum"></p><p id="ll-err"></p><button type="button" class="btn-ghost" id="ll-close">Back</button><p class="ll-note">Big libraries can take a minute the first time. After that it opens instantly.</p></div></div>
 <div id="loader"><div class="ring"><div class="spin"></div><div class="av" id="ld-av"></div></div></div>
 
 <!-- browse -->
@@ -1251,6 +1274,26 @@ const Plex={
    IPTV backend: Xtream Codes accounts and M3U playlists
    (live channels, movies and series; progress and My List are kept on the device)
    ===================================================================== */
+/* download text with a running byte count (for progress) */
+async function fetchText(url,onBytes,ms=600000){
+  const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
+  try{
+    const r=await fetch(url,{signal:c.signal});
+    if(!r.ok){const e=new Error(`${r.status} ${r.statusText}`);e.status=r.status;throw e}
+    if(!r.body||!r.body.getReader||!onBytes)return await r.text();
+    const rd=r.body.getReader(),dec=new TextDecoder(),parts=[];let n=0,last=0;
+    for(;;){const{done,value}=await rd.read();if(done)break;n+=value.length;parts.push(dec.decode(value,{stream:true}));if(n-last>262144){last=n;onBytes(n)}}
+    parts.push(dec.decode());onBytes(n);return parts.join('');
+  }catch(e){if(e.name==='AbortError')throw new Error('the server took too long to answer');throw e}
+  finally{clearTimeout(t)}
+}
+/* small IndexedDB key-value store (falls back to nothing if the browser blocks it) */
+const IDB={
+  _db:null,
+  open(){return this._db||(this._db=new Promise((res,rej)=>{try{const r=indexedDB.open('lantern',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}}))},
+  async get(k){const db=await this.open();return new Promise(res=>{try{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(undefined)}catch{res(undefined)}})},
+  async set(k,v){const db=await this.open();return new Promise(res=>{try{const tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)}catch{res(false)}})}
+};
 const IPTV={
   data:null,_series:{},
   reset(){this.data=null;this._series={}},
@@ -1267,58 +1310,136 @@ const IPTV={
       if(r.user_info.status&&!/active/i.test(r.user_info.status))throw new Error('account is '+String(r.user_info.status).toLowerCase());
       return{name:S.src.name||'IPTV',version:'Xtream'};
     }
-    await this.load();return{name:S.src.name||'IPTV',version:'M3U'};
+    return{name:S.src.name||'IPTV',version:'M3U'};
   },
   async users(){return[]},
   me(){return{id:'iptv',name:S.src?.user||'Me',token:'iptv'}},
   async login(){return this.me()},
   async resumeSession(rec){return{...rec}},
   async logout(){},
-  async load(){
+  /* Loads the whole catalogue one list at a time (keeps memory low), reporting progress,
+     and caches the slimmed-down result on the device so later launches open instantly. */
+  async load(progress){
     if(this.data)return this.data;
-    const d={live:[],movies:[],series:[],byId:new Map()};
-    const put=it=>{d.byId.set(it.id,it);ITEMS.set(it.id,it);return it};
-    const favs=new Set(LS.get(this.key('fav'),[]));
-    if(this.xt){
-      const[lc,ls,vc,vs,sc,ss]=await Promise.all(['get_live_categories','get_live_streams','get_vod_categories','get_vod_streams','get_series_categories','get_series'].map(a=>this.xapi(a).catch(()=>[])));
-      const cat=a=>new Map((Array.isArray(a)?a:[]).map(c=>[String(c.category_id),c.category_name]));
-      const L=cat(lc),Vc=cat(vc),Sc=cat(sc);
-      for(const x of Array.isArray(ls)?ls:[])d.live.push(put({id:'xl'+x.stream_id,sid:x.stream_id,type:'Live',name:x.name,num:x.num,logo:x.stream_icon||null,thumb:null,group:L.get(String(x.category_id))||'Channels',genres:[L.get(String(x.category_id))||'Channels'],epg:x.epg_channel_id,archive:+x.tv_archive||0}));
-      for(const x of Array.isArray(vs)?vs:[]){const g=Vc.get(String(x.category_id))||'Movies';
-        d.movies.push(put({id:'xv'+x.stream_id,sid:x.stream_id,type:'Movie',name:x.name,year:+(String(x.name).match(/\((\d{4})\)/)||[])[1]||undefined,score:parseFloat(x.rating)||undefined,genres:[g],group:g,
-          poster:x.stream_icon||null,thumb:x.stream_icon||null,backdrop:x.stream_icon||null,logo:null,ext:x.container_extension||'mp4',created:(+x.added||0)*1000,overview:'',fav:favs.has('xv'+x.stream_id)}))}
-      for(const x of Array.isArray(ss)?ss:[]){const g=Sc.get(String(x.category_id))||'Series';const bd=(Array.isArray(x.backdrop_path)?x.backdrop_path[0]:x.backdrop_path)||x.cover;
-        d.series.push(put({id:'xs'+x.series_id,sid:x.series_id,type:'Series',name:x.name,year:+String(x.releaseDate||x.release_date||'').slice(0,4)||undefined,score:parseFloat(x.rating)||undefined,
-          genres:[g,...String(x.genre||'').split(/[,/]/).map(t=>t.trim()).filter(Boolean)].slice(0,3),group:g,poster:x.cover||null,thumb:bd||x.cover||null,backdrop:bd||x.cover||null,logo:null,
-          overview:x.plot||'',created:(+x.last_modified||0)*1000,fav:favs.has('xs'+x.series_id),people:String(x.cast||'').split(',').map(n=>n.trim()).filter(Boolean).slice(0,8).map(n=>({name:n,role:'Actor'}))}))}
-    }else{
-      const r=await fetch(S.server);if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);
-      const txt=await r.text();if(!/#EXTM3U|#EXTINF/i.test(txt))throw new Error('that file is not an M3U playlist');
-      const shows=new Map();let n=0,meta=null;
-      for(const raw of txt.split(/\r?\n/)){
-        const line=raw.trim();if(!line)continue;
-        if(line.startsWith('#EXTINF')){
-          const attr=k=>(line.match(new RegExp(k+'="([^"]*)"','i'))||[])[1]||'';
-          meta={name:line.slice(line.lastIndexOf(',')+1).trim()||attr('tvg-name'),logo:attr('tvg-logo'),group:attr('group-title')||'Channels',epg:attr('tvg-id')};continue}
-        if(line.startsWith('#')||!meta)continue;
-        const url=line,id='m'+(n++),m=meta;meta=null;
-        const se=m.name.match(/^(.*?)[\s._-]*S(\d{1,2})\s*E(\d{1,3})\b/i);
-        const vod=/\/(movie|series)\//i.test(url)||/\.(mp4|mkv|avi|mov|m4v)(\?|$)/i.test(url);
-        if(se&&vod){
-          const show=se[1].replace(/[\s._-]+$/,'').trim()||m.name,sk='ms'+show.toLowerCase();
-          let sh=shows.get(sk);
-          if(!sh){sh=put({id:sk,type:'Series',name:show,genres:[m.group],group:m.group,poster:m.logo||null,thumb:m.logo||null,backdrop:m.logo||null,logo:null,overview:'',fav:favs.has(sk),eps:[]});shows.set(sk,sh);d.series.push(sh)}
-          sh.eps.push(put({id,type:'Episode',name:m.name,url,seriesId:sk,seriesName:show,season:+se[2],episode:+se[3],seasonId:sk+':'+(+se[2]),thumb:m.logo||sh.thumb,backdrop:sh.backdrop,poster:sh.poster,overview:'',genres:[m.group]}));
-        }else if(vod){
-          d.movies.push(put({id,type:'Movie',name:m.name,year:+(m.name.match(/\((\d{4})\)/)||[])[1]||undefined,genres:[m.group],group:m.group,poster:m.logo||null,thumb:m.logo||null,backdrop:m.logo||null,logo:null,url,overview:'',created:n,fav:favs.has(id)}));
-        }else{
-          d.live.push(put({id,type:'Live',name:m.name,num:d.live.length+1,logo:m.logo||null,thumb:null,group:m.group,genres:[m.group],url,epg:m.epg}));
-        }
+    if(this._loading)return this._loading;
+    return this._loading=(async()=>{
+      let raw=null;
+      if(!this.force){const c=await IDB.get(this.key('lib')).catch(()=>null);if(c&&c.v===2&&Date.now()-c.t<24*3600e3)raw=c}
+      if(!raw){
+        raw=this.xt?await this.fetchXtream(progress||(()=>{})):await this.fetchM3U(progress||(()=>{}));
+        raw.t=Date.now();raw.v=2;
+        IDB.set(this.key('lib'),raw).catch(()=>{});
       }
+      this.force=false;
+      const d=this.index(raw);this.applyProgress(d);
+      return this.data=d;
+    })().finally(()=>{this._loading=null});
+  },
+  async fetchList(action,key,progress){
+    const s=S.src,q=new URLSearchParams({username:s.user,password:s.pass||'',action});
+    progress(key,{state:'run',bytes:0});
+    let txt=await fetchText(`${S.server}/player_api.php?${q}`,b=>progress(key,{state:'run',bytes:b}));
+    let arr;try{arr=JSON.parse(txt)}catch{arr=[]}
+    txt=null;
+    return Array.isArray(arr)?arr:Object.values(arr||{});
+  },
+  async fetchXtream(progress){
+    const raw={live:[],movies:[],series:[],cats:{}};
+    const cats=async(action,key)=>{const a=await this.fetchList(action,key,progress);const m={};for(const c of a)m[c.category_id]=c.category_name;progress(key,{state:'done',count:a.length});return m};
+    const L=await cats('get_live_categories','lcat');
+    let a=await this.fetchList('get_live_streams','live',progress);
+    for(const x of a)raw.live.push({id:'xl'+x.stream_id,sid:x.stream_id,name:String(x.name||''),num:x.num,logo:x.stream_icon||null,group:L[x.category_id]||'Channels',epg:x.epg_channel_id||''});
+    progress('live',{state:'done',count:raw.live.length});a=null;
+    const V=await cats('get_vod_categories','vcat');
+    a=await this.fetchList('get_vod_streams','movies',progress);
+    for(const x of a){const n=String(x.name||'');raw.movies.push({id:'xv'+x.stream_id,sid:x.stream_id,name:n,year:+(n.match(/\((\d{4})\)/)||[])[1]||0,score:parseFloat(x.rating)||0,
+      group:V[x.category_id]||'Movies',img:x.stream_icon||null,ext:x.container_extension||'mp4',created:(+x.added||0)*1000})}
+    progress('movies',{state:'done',count:raw.movies.length});a=null;
+    const Sc=await cats('get_series_categories','scat');
+    a=await this.fetchList('get_series','series',progress);
+    for(const x of a){const bd=(Array.isArray(x.backdrop_path)?x.backdrop_path[0]:x.backdrop_path)||'';
+      raw.series.push({id:'xs'+x.series_id,sid:x.series_id,name:String(x.name||''),year:+String(x.releaseDate||x.release_date||'').slice(0,4)||0,score:parseFloat(x.rating)||0,
+        group:Sc[x.category_id]||'Series',img:x.cover||null,bd:bd||null,plot:String(x.plot||'').slice(0,400),genre:String(x.genre||''),created:(+x.last_modified||0)*1000})}
+    progress('series',{state:'done',count:raw.series.length});a=null;
+    return raw;
+  },
+  async fetchM3U(progress){
+    progress('m3u',{state:'run',bytes:0});
+    let txt=await fetchText(S.server,b=>progress('m3u',{state:'run',bytes:b}));
+    if(!/#EXTM3U|#EXTINF/i.test(txt.slice(0,5000)))throw new Error('that file is not an M3U playlist');
+    progress('m3u',{state:'done',bytes:txt.length});progress('parse',{state:'run'});
+    const raw={live:[],movies:[],series:[],eps:[]};
+    let n=0,meta=null,pos=0;
+    while(pos<txt.length){
+      let end=txt.indexOf('\n',pos);if(end<0)end=txt.length;
+      const line=txt.slice(pos,end).trim();pos=end+1;
+      if(!line)continue;
+      if(line.startsWith('#EXTINF')){
+        const attr=k=>{const m=line.match(new RegExp(k+'="([^"]*)"','i'));return m?m[1]:''};
+        meta={name:line.slice(line.lastIndexOf(',')+1).trim()||attr('tvg-name'),logo:attr('tvg-logo'),group:attr('group-title')||'Channels',epg:attr('tvg-id')};continue}
+      if(line.startsWith('#')||!meta)continue;
+      const url=line,id='m'+(n++),m=meta;meta=null;
+      const se=m.name.match(/^(.*?)[\s._-]*S(\d{1,2})\s*E(\d{1,3})\b/i);
+      const vod=/\/(movie|series)\//i.test(url)||/\.(mp4|mkv|avi|mov|m4v)(\?|$)/i.test(url);
+      if(se&&vod)raw.eps.push({id,name:m.name,url,show:se[1].replace(/[\s._-]+$/,'').trim()||m.name,season:+se[2],episode:+se[3],img:m.logo||null,group:m.group});
+      else if(vod)raw.movies.push({id,name:m.name,year:+(m.name.match(/\((\d{4})\)/)||[])[1]||0,group:m.group,img:m.logo||null,url,created:n});
+      else raw.live.push({id,name:m.name,num:raw.live.length+1,logo:m.logo||null,group:m.group,url,epg:m.epg});
+    }
+    txt=null;
+    progress('parse',{state:'done',count:raw.live.length+raw.movies.length+raw.eps.length});
+    return raw;
+  },
+  /* turn the compact cached lists into the items the interface uses */
+  index(raw){
+    const d={live:[],movies:[],series:[],byId:new Map(),counts:{live:0,movies:0,series:0},t:raw.t};
+    const favs=new Set(LS.get(this.key('fav'),[]));
+    const put=it=>{d.byId.set(it.id,it);ITEMS.set(it.id,it);return it};
+    for(const x of raw.live)d.live.push(put({...x,type:'Live',thumb:null,genres:[x.group]}));
+    for(const x of raw.movies)d.movies.push(put({id:x.id,sid:x.sid,url:x.url,type:'Movie',name:x.name,year:x.year||undefined,score:x.score||undefined,group:x.group,genres:[x.group],
+      poster:x.img,thumb:x.img,backdrop:x.img,logo:null,ext:x.ext,created:x.created,overview:'',fav:favs.has(x.id)}));
+    for(const x of raw.series)d.series.push(put({id:x.id,sid:x.sid,type:'Series',name:x.name,year:x.year||undefined,score:x.score||undefined,group:x.group,
+      genres:[x.group,...x.genre.split(/[,/]/).map(t=>t.trim()).filter(Boolean)].slice(0,3),poster:x.img,thumb:x.bd||x.img,backdrop:x.bd||x.img,logo:null,overview:x.plot,created:x.created,fav:favs.has(x.id)}));
+    if(raw.eps&&raw.eps.length){
+      const shows=new Map();
+      for(const e of raw.eps){const sk='ms'+e.show.toLowerCase();let sh=shows.get(sk);
+        if(!sh){sh=put({id:sk,type:'Series',name:e.show,group:e.group,genres:[e.group],poster:e.img,thumb:e.img,backdrop:e.img,logo:null,overview:'',fav:favs.has(sk),eps:[]});shows.set(sk,sh);d.series.push(sh)}
+        sh.eps.push(put({id:e.id,type:'Episode',name:e.name,url:e.url,seriesId:sk,seriesName:e.show,season:e.season,episode:e.episode,seasonId:sk+':'+e.season,thumb:e.img||sh.thumb,backdrop:sh.backdrop,poster:sh.poster,overview:'',genres:[e.group]}))}
       for(const sh of shows.values())sh.eps.sort((a,b)=>a.season-b.season||a.episode-b.episode);
     }
-    this.applyProgress(d);
-    return this.data=d;
+    d.counts={live:d.live.length,movies:d.movies.length,series:d.series.length};
+    return d;
+  },
+  /* full-screen progress while the library downloads; skipped when the cache is fresh */
+  async loadWithUI(){
+    if(this.data)return this.data;
+    const cached=!this.force&&await IDB.get(this.key('lib')).then(c=>c&&c.v===2&&Date.now()-c.t<24*3600e3).catch(()=>false);
+    if(cached)return this.load();
+    const steps=this.xt?[['lcat','Live TV categories'],['live','Live channels'],['vcat','Movie categories'],['movies','Movies'],['scat','Series categories'],['series','Series']]:[['m3u','Downloading playlist'],['parse','Reading channels, movies and series']];
+    const ov=$('#libload');$('#ll-logo').innerHTML=logoHTML(S.src?.name||'IPTV');
+    $('#ll-title').textContent='Loading your library';$('#ll-err').textContent='';$('#ll-sum').textContent='';
+    $('#ll-steps').innerHTML=steps.map(([k,l])=>`<li data-k="${k}"><span class="st"></span><span class="l">${l}</span><span class="v"></span></li>`).join('');
+    ov.classList.add('on');
+    const fmtMB=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+    let doneN=0;
+    const progress=(k,i)=>{
+      const li=$(`#ll-steps li[data-k="${k}"]`);if(!li)return;
+      li.className=i.state;
+      if(i.state==='run')$('.v',li).textContent=i.bytes?fmtMB(i.bytes):'';
+      if(i.state==='done'){$('.v',li).textContent=i.count!=null?Number(i.count).toLocaleString()+(k.endsWith('cat')?(i.count===1?' category':' categories'):''):(i.bytes?fmtMB(i.bytes):'done');doneN++;$('#ll-bar i').style.width=(doneN/steps.length*100)+'%'}
+    };
+    $('#ll-bar i').style.width='0';
+    try{
+      const d=await this.load(progress);
+      $('#ll-bar i').style.width='100%';
+      $('#ll-title').textContent='Library ready';
+      $('#ll-sum').textContent=`${d.counts.movies.toLocaleString()} movies · ${d.counts.series.toLocaleString()} series · ${d.counts.live.toLocaleString()} live channels`;
+      await sleep(1400);
+      return d;
+    }catch(e){
+      $('#ll-title').textContent="Couldn't load the library";$('#ll-err').textContent=e.message||String(e);
+      await new Promise(r=>{$('#ll-close').onclick=r});
+      throw e;
+    }finally{ov.classList.remove('on')}
   },
   prog(){return LS.get(this.key('prog'),{})},
   applyProgress(d){const p=this.prog();for(const[id,v]of Object.entries(p)){const it=d.byId.get(id)||ITEMS.get(id);if(it){it.posTicks=v.pos*1e7;it.ticks=(v.dur||0)*1e7;it.progress=v.dur?v.pos/v.dur*100:0;it.runtime=it.runtime||Math.round((v.dur||0)/60)||null}}},
@@ -1676,6 +1797,7 @@ async function connectSource(src,gesture){
   Plex._sections=null;Plex._genres={};IPTV.reset();
   const info=await B.info();S.version=info.version;
   if(info.name&&!src.name)src.name=info.name;
+  if(B===IPTV){LS.set('loading-src',src.id);await IPTV.loadWithUI();LS.del('loading-src')}
   SOURCES.save(src);LS.set('server',S.server);LS.set('source',src.id);
   document.documentElement.classList.toggle('has-live',!!B.live);
   startIntro(src.name||info.name||KIND_NAME[src.kind],gesture);
@@ -1979,12 +2101,12 @@ async function renderLive(tok){
   const main=$('#main');main.innerHTML=`<div class="rows flat" id="rows"><div class="spin" style="margin:60px auto"></div></div>`;
   const groups=B.live?await B.live().catch(()=>[]):[];if(tok!==pageToken)return;
   const rows=$('#rows');rows.innerHTML=groups.length?'':'<p class="empty">This source has no live channels.</p>';
-  for(const g of groups.slice(0,80)){const el=rowShell(g.name,false,'live');rows.appendChild(el);fillRow(el,g.channels.slice(0,80),{})}
+  for(const g of groups.slice(0,40)){const el=rowShell(`${g.name} · ${g.channels.length.toLocaleString()}`,false,'live');rows.appendChild(el);fillRow(el,g.channels.slice(0,60),{})}
   if(B.nowPlaying)for(const g of groups.slice(0,6))for(const ch of g.channels.slice(0,8))
     B.nowPlaying(ch).then(n=>{if(!n)return;ch.now=n;$$(`.box[data-id="${ch.id}"] .lnow`).forEach(e=>e.textContent=n.title)});
 }
 function liveCardHTML(it){
-  return `<div class="card"><div class="box lv-card" data-id="${it.id}"><div class="lv-logo">${it.logo?`<img class="im" decoding="async" src="${esc(it.logo)}" alt="">`:`<span>${esc(it.name)}</span>`}</div><div class="lv-meta"><b>${it.num?`<i>${it.num}</i> `:''}${esc(it.name)}</b><span class="lnow">${esc(it.now?.title||'')}</span></div></div></div>`;
+  return `<div class="card"><div class="box lv-card" data-id="${it.id}"><div class="lv-logo">${it.logo?`<img class="im" loading="lazy" decoding="async" src="${esc(it.logo)}" alt="">`:`<span>${esc(it.name)}</span>`}</div><div class="lv-meta"><b>${it.num?`<i>${it.num}</i> `:''}${esc(it.name)}</b><span class="lnow">${esc(it.now?.title||'')}</span></div></div></div>`;
 }
 
 /* ---------- account & settings page ---------- */
@@ -1998,6 +2120,10 @@ function renderAccount(){
       <div class="line"><b>${esc(S.serverName)}</b><span class="mut">${S.demo?'Demo mode':esc((KIND_NAME[S.kind]||'Jellyfin')+' '+(S.version||''))}</span></div>
       <div class="line"><span class="mut">${S.demo?'Sample library':esc(S.server)}</span><a class="lk" data-act2="switch">Change source</a></div>
     </div></div>
+    ${B===IPTV&&IPTV.data?`<div class="grp"><h3>Library</h3><div>
+      <div class="line"><span>${IPTV.data.counts.movies.toLocaleString()} movies · ${IPTV.data.counts.series.toLocaleString()} series · ${IPTV.data.counts.live.toLocaleString()} live channels</span></div>
+      <div class="line"><span class="mut">Updated ${IPTV.data.t?new Date(IPTV.data.t).toLocaleString():'just now'}</span><a class="lk" data-act2="refresh">Refresh library</a></div>
+    </div></div>`:''}
     <div class="grp"><h3>Profile</h3><div>
       <div class="line"><div class="pr"><div class="av">${avatarHTML(u)}</div><div><b>${esc(u.name)}</b><div class="mut">${u.admin?'Administrator':'Member'} · signed in on this device</div></div></div><a class="lk" data-act2="edit">Edit profile</a></div>
       <div class="line"><span></span><a class="lk" data-act2="profiles">Manage profiles</a></div>
@@ -2025,7 +2151,8 @@ function wireAccount(){
     if(k==='edit')dlgEdit(S.users.find(x=>x.id===S.user.id)||S.user);
     if(k==='profiles')showProfiles(true);
     if(k==='out'){await B.logout();SESS.forget(S.user.id);S.user=null;showProfiles()}
-    if(k==='switch')changeSource()});
+    if(k==='switch')changeSource();
+    if(k==='refresh'){IPTV.force=true;IPTV.data=null;try{await IPTV.loadWithUI();go('home')}catch{}}});
 }
 /* tap-to-open menus on touch screens */
 function closeMenus(){$$('.dd.open').forEach(d=>d.classList.remove('open'))}
@@ -2721,6 +2848,13 @@ new MutationObserver(()=>{
 const HOSTED=(()=>{const m=location.pathname.match(/^(.*?)\/lantern(\/(index\.html)?)?$/i);return m&&/^https?:$/.test(location.protocol)?location.origin+m[1]:null})();
 if(HOSTED){document.documentElement.classList.add('hosted');try{localStorage.removeItem('lantern.classic')}catch{}}
 (async()=>{
+  if(/recovered/.test(location.hash)){
+    history.replaceState(null,'',location.pathname);
+    const bad=LS.get('loading-src',null);LS.del('loading-src');LS.del('source');LS.del('server');
+    await fontsReady;showConnect();
+    $('#c-err').textContent=bad?'Lantern ran out of memory loading that source. Try again, or use a smaller playlist (most providers let you pick categories).':'Lantern restarted after running out of memory.';
+    return;
+  }
   if(HOSTED){
     $('#c-url').value=HOSTED;
     try{await connect(HOSTED,false);return}catch(e){await fontsReady;show('s-connect');$('#c-err').textContent=`Couldn't reach this server (${e.message}).`;return}
