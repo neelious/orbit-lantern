@@ -31,6 +31,7 @@ import android.webkit.WebViewClient;
  */
 public class MainActivity extends Activity {
     private static final String APP_URL = "file:///android_asset/www/index.html";
+    private static final int REQ_PLAY = 42;
 
     private WebView web;
     private boolean tv;
@@ -164,6 +165,17 @@ public class MainActivity extends Activity {
         web.evaluateJavascript("window.lanternPause && window.lanternPause()", null);
     }
 
+    @SuppressWarnings("deprecation")
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_PLAY || web == null) return;
+        String r = data == null ? null : data.getStringExtra("result");
+        if (r == null) r = "{}";
+        web.evaluateJavascript("window.lanternNativeEnded && window.lanternNativeEnded(" + org.json.JSONObject.quote(r) + ")", null);
+        if (tv) applyImmersive(true);
+    }
+
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
@@ -230,6 +242,17 @@ public class MainActivity extends Activity {
             java.io.File[] files = new java.io.File(getFilesDir(), "store").listFiles();
             if (files == null) return;
             for (java.io.File f : files) if (f.getName().startsWith(p)) f.delete();
+        }
+
+        /* Open the native player; the result comes back through window.lanternNativeEnded(). */
+        @JavascriptInterface
+        public void playNative(String spec) {
+            runOnUiThread(() -> {
+                Intent i = new Intent(MainActivity.this, PlayerActivity.class);
+                i.putExtra(PlayerActivity.EXTRA_SPEC, spec);
+                i.putExtra(PlayerActivity.EXTRA_TV, tv);
+                startActivityForResult(i, REQ_PLAY);
+            });
         }
 
         @JavascriptInterface
