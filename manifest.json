@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.4.1.0",
+        "changelog": "Build 1.4.1.0",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://raw.githubusercontent.com/neelious/orbit-lantern/main/dist/lantern_1.4.1.0.zip",
+        "checksum": "1996d050faa688ade2a3c9fa5ade1eca",
+        "timestamp": "2026-11-05T14:54:43Z"
+      },
+      {
         "version": "1.4.0.0",
         "changelog": "Build 1.4.0.0",
         "targetAbi": "12.1.0.0",
