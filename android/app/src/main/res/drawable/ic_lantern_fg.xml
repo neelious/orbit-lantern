@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: a simple lantern (108dp canvas, keep art inside the 66dp safe zone). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- handle -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#E50914"
+        android:strokeWidth="3.5"
+        android:pathData="M46,36 Q54,24 62,36" />
+    <!-- cap -->
+    <path android:fillColor="#E50914" android:pathData="M42,36 L66,36 L62,42 L46,42 Z" />
+    <!-- glass -->
+    <path android:fillColor="#E50914" android:pathData="M45,44 L63,44 Q68,56 63,68 L45,68 Q40,56 45,44 Z" />
+    <!-- flame -->
+    <path android:fillColor="#FFD27A" android:pathData="M54,49 Q59,56 54,63 Q49,56 54,49 Z" />
+    <!-- base -->
+    <path android:fillColor="#E50914" android:pathData="M44,70 L64,70 L66,75 L42,75 Z" />
+</vector>

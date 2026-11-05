@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Anton&family=Bangers&family=Bebas+Neue&family=Cinzel:wght@700&family=Creepster&family=Orbitron:wght@800&family=Oswald:wght@600&family=Playfair+Display:ital,wght@1,900&family=Righteous&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.min.js"></script>
 <style>
 :root{--red:#e50914;--red2:#c11119;--bg:#141414;--gut:4%;--per:6;--txt:#e5e5e5;--mute:#808080}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -534,6 +535,41 @@ html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!im
   .bar{height:5px}
   .pg .kn{transform:scale(1)}
 }
+/* ---------- connect: tabs, saved sources, Plex code ---------- */
+.c-box{width:min(520px,94vw)}
+.c-tabs{display:flex;gap:6px;margin:6px 0 14px;border-bottom:1px solid #333}
+.c-tabs button{padding:10px 12px;color:#b3b3b3;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}
+.c-tabs button.on{color:#fff;border-bottom-color:var(--red)}
+.c-pane{display:none}.c-pane.on{display:block}
+.c-sub{display:flex;gap:18px;margin:4px 0 14px;color:#ddd;font-size:15px}
+.c-sub input{accent-color:var(--red);margin-right:6px}
+.c-saved-h{color:#b3b3b3;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:2px 0 8px}
+#c-saved{margin-bottom:14px}
+.c-src{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:10px 12px;border-radius:4px;background:rgba(255,255,255,.06);margin-bottom:8px;cursor:pointer;transition:background .15s}
+.c-src:hover,.c-src:focus{background:rgba(255,255,255,.14);outline:none}
+.c-src.busy{opacity:.6;pointer-events:none}
+.c-src .k{grid-row:1/3;font-size:11px;font-weight:700;padding:4px 7px;border-radius:3px;background:#333;text-transform:uppercase}
+.c-src .k-jellyfin{background:#6c2bb8}.c-src .k-emby{background:#2f8a3c}.c-src .k-plex{background:#c98a00;color:#000}.c-src .k-xtream,.c-src .k-m3u{background:#1f5fa8}
+.c-src .n{font-weight:600}.c-src .u{grid-column:2;color:#8c8c8c;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-src .x{grid-row:1/3;grid-column:3;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+.c-src .x svg{width:16px;fill:#999}.c-src .x:hover svg{fill:#fff}
+.plink{text-align:center;color:#ccc}.plink .u{font-size:22px;color:#fff;font-weight:700;margin:4px 0 10px}
+.plink .code{font-size:46px;letter-spacing:10px;font-weight:800;color:#fff;margin:8px 0 18px;font-family:ui-monospace,Menlo,Consolas,monospace}
+/* ---------- Live TV ---------- */
+.lvnav{display:none!important}
+html.has-live #n-links .lvnav{display:inline!important}
+html.has-live .browse-dd .lvnav{display:flex!important}
+.lv-card{background:linear-gradient(135deg,#2a2a2a,#151515)!important;display:flex;flex-direction:column}
+.lv-card .lv-logo{flex:1;display:flex;align-items:center;justify-content:center;padding:10% 14% 4%;min-height:0}
+.lv-card .lv-logo img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
+.lv-card .lv-logo span{font-weight:700;font-size:max(1.1vw,14px);text-align:center}
+.lv-card .lv-meta{padding:0 8% 7%;font-size:max(.8vw,11px);line-height:1.3;overflow:hidden}
+.lv-card .lv-meta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lv-card .lv-meta b i{font-style:normal;color:#8c8c8c;margin-right:4px}
+.lv-card .lnow{display:block;color:#b3b3b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#player.live .pg,#player.live #p-b10,#player.live #p-f10,#player.live #p-speed,#player.live #p-next,#player.live #p-eps{display:none!important}
+.cr .pt .lvb{color:var(--red);font-weight:700;margin-left:10px}
+html.tv #p-fs{display:none!important}
 </style>
 </head>
 <body class="fonts-pending">
@@ -541,15 +577,39 @@ html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!im
 <!-- connect -->
 <section id="s-connect" class="screen">
   <div class="c-top"><div class="logo" id="c-logo"></div></div>
-  <form class="c-box" id="c-form" autocomplete="on">
-    <h1>Connect</h1>
+  <div class="c-box" id="c-box">
+    <h1>Add a source</h1>
+    <div id="c-saved"></div>
+    <div class="c-tabs" role="tablist">
+      <button type="button" class="on" data-tab="server">Media server</button><button type="button" data-tab="plex">Plex account</button><button type="button" data-tab="iptv">IPTV</button>
+    </div>
     <div class="c-err" id="c-err"></div>
-    <div class="fld"><input id="c-url" placeholder=" " autocomplete="url" inputmode="url"><label for="c-url">Jellyfin server address</label></div>
-    <button class="btn-red" id="c-go" type="submit">Connect</button>
+    <form class="c-pane on" id="c-form" data-pane="server" autocomplete="on">
+      <div class="fld"><input id="c-url" placeholder=" " autocomplete="url" inputmode="url"><label for="c-url">Server address</label></div>
+      <button class="btn-red" id="c-go" type="submit">Connect</button>
+      <p class="c-hint">Jellyfin, Emby or Plex, detected automatically. Example: <b>192.168.1.20:8096</b> (Jellyfin/Emby) or <b>192.168.1.20:32400</b> (Plex).</p>
+    </form>
+    <div class="c-pane" data-pane="plex" id="c-plex">
+      <button class="btn-red" type="button" id="c-plex-go">Sign in with Plex</button>
+      <p class="c-hint">You'll get a short code to enter at <b>plex.tv/link</b>, then pick one of your servers.</p>
+    </div>
+    <form class="c-pane" data-pane="iptv" id="c-iptv" autocomplete="on">
+      <div class="c-sub"><label><input type="radio" name="ik" value="xtream" checked> Xtream login</label><label><input type="radio" name="ik" value="m3u"> M3U playlist</label></div>
+      <div class="ik-x">
+        <div class="fld"><input id="x-url" placeholder=" " inputmode="url"><label for="x-url">Server URL (http://host:port)</label></div>
+        <div class="fld"><input id="x-user" placeholder=" " autocomplete="username"><label for="x-user">Username</label></div>
+        <div class="fld"><input id="x-pass" type="password" placeholder=" " autocomplete="current-password"><label for="x-pass">Password</label></div>
+      </div>
+      <div class="ik-m" hidden>
+        <div class="fld"><input id="m-url" placeholder=" " inputmode="url"><label for="m-url">Playlist URL (.m3u / .m3u8)</label></div>
+        <div class="fld"><input id="m-name" placeholder=" "><label for="m-name">Name (optional)</label></div>
+      </div>
+      <button class="btn-red" type="submit" id="i-go">Add IPTV</button>
+      <p class="c-hint">Live TV, movies and series from your IPTV provider.</p>
+    </form>
     <div class="c-or">OR</div>
     <button class="btn-ghost" type="button" id="c-demo">Try the demo</button>
-    <p class="c-hint">Example: <b>http://192.168.1.20:8096</b> or <b>https://jellyfin.example.com</b>. Your server name becomes the wordmark, and its users become profiles.</p>
-  </form>
+  </div>
 </section>
 
 <!-- intro -->
@@ -577,10 +637,10 @@ html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!im
   <nav id="nav">
     <div class="logo" id="n-logo" data-go="home"></div>
     <div class="links" id="n-links">
-      <a data-go="home">Home</a><a data-go="tv">TV Shows</a><a data-go="movies">Movies</a><a data-go="new">New &amp; Popular</a><a data-go="list">My List</a>
+      <a data-go="home">Home</a><a data-go="tv">TV Shows</a><a data-go="movies">Movies</a><a data-go="new">New &amp; Popular</a><a data-go="list">My List</a><a data-go="live" class="lvnav">Live TV</a>
     </div>
     <div class="browse-dd dd"><span>Browse ▾</span><div class="menu"><div class="arrow-up"></div>
-      <div class="mi" data-go="home"><span>Home</span></div><div class="mi" data-go="tv"><span>TV Shows</span></div><div class="mi" data-go="movies"><span>Movies</span></div><div class="mi" data-go="new"><span>New &amp; Popular</span></div><div class="mi" data-go="list"><span>My List</span></div>
+      <div class="mi" data-go="home"><span>Home</span></div><div class="mi" data-go="tv"><span>TV Shows</span></div><div class="mi" data-go="movies"><span>Movies</span></div><div class="mi" data-go="new"><span>New &amp; Popular</span></div><div class="mi" data-go="list"><span>My List</span></div><div class="mi lvnav" data-go="live"><span>Live TV</span></div>
     </div></div>
     <div class="right">
       <div class="srch" id="srch"><button id="srch-b" aria-label="Search"><svg class="icn" viewBox="0 0 24 24"><path d="M10 2a8 8 0 0 1 6.3 12.9l5.4 5.4-1.4 1.4-5.4-5.4A8 8 0 1 1 10 2zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/></svg></button><input id="srch-i" placeholder="Titles, people, genres"></div>
@@ -836,12 +896,17 @@ function authHeader(token,dev){
   token=token===undefined?S.token:token;dev=dev||S.devId||S.deviceId;
   return `MediaBrowser Client="Lantern", Device="${(navigator.userAgentData?.platform||navigator.platform||'Web').replace(/"/g,'')} Browser", DeviceId="${dev}", Version="1.2.0"${token?`, Token="${token}"`:''}`;
 }
+/* Jellyfin and Emby share this API; Emby lives under /emby and wants its own header names */
+function apiHeaders(token,dev){
+  const h=authHeader(token,dev),t=token===undefined?S.token:token;
+  return S.kind==='emby'?{'X-Emby-Authorization':h,...(t?{'X-Emby-Token':t}:{})}:{'Authorization':h};
+}
 async function jf(path,opts={}){
-  const r=await fetch(S.server+path,{method:opts.method||'GET',headers:{'Authorization':authHeader(opts.token,opts.dev),...(opts.body?{'Content-Type':'application/json'}:{})},body:opts.body?JSON.stringify(opts.body):undefined});
+  const r=await fetch((S.api||S.server)+path,{method:opts.method||'GET',headers:{...apiHeaders(opts.token,opts.dev),...(opts.body?{'Content-Type':'application/json'}:{})},body:opts.body?JSON.stringify(opts.body):undefined});
   if(!r.ok){let m='';try{m=(await r.text()).slice(0,200)}catch{}const e=new Error(`${r.status} ${r.statusText}${m&&!/^\s*</.test(m)?': '+m:''}`);e.status=r.status;throw e}
   const t=await r.text();return t?JSON.parse(t):null;
 }
-function img(id,type,tag,w){return id&&tag?`${S.server}/Items/${id}/Images/${type}?tag=${tag}&maxWidth=${w}&quality=90`:null}
+function img(id,type,tag,w){return id&&tag?`${S.api||S.server}/Items/${id}/Images/${type}?tag=${tag}&maxWidth=${w}&quality=90`:null}
 function norm(i){
   const t=i.ImageTags||{},ud=i.UserData||{};
   const bd=i.BackdropImageTags?.length?img(i.Id,'Backdrop',i.BackdropImageTags[0],1920):(i.ParentBackdropImageTags?.length?img(i.ParentBackdropItemId,'Backdrop',i.ParentBackdropImageTags[0],1920):null);
@@ -881,9 +946,9 @@ function parseVTT(txt){
 }
 const FIELDS='Fields=Overview,Genres,ChildCount,PrimaryImageAspectRatio,DateCreated&EnableImageTypes=Primary,Backdrop,Thumb,Logo&ImageTypeLimit=1';
 const Real={
-  async info(){const i=await jf('/System/Info/Public');S.newApi=verGE(i.Version,'10.9.0');return{name:i.ServerName||'Jellyfin',version:i.Version}},
-  async users(){const u=await jf('/Users/Public').catch(()=>[]);return(u||[]).map(x=>({id:x.Id,name:x.Name,hasPw:!!x.HasPassword,img:x.PrimaryImageTag?`${S.server}/Users/${x.Id}/Images/Primary?tag=${x.PrimaryImageTag}&maxWidth=320`:null}))},
-  userImg(x){return x.PrimaryImageTag?`${S.server}/Users/${x.Id}/Images/Primary?tag=${x.PrimaryImageTag}&maxWidth=320`:null},
+  async info(){const i=await jf('/System/Info/Public');S.newApi=S.kind!=='emby'&&verGE(i.Version,'10.9.0');return{name:i.ServerName||(S.kind==='emby'?'Emby':'Jellyfin'),version:i.Version}},
+  async users(){const u=await jf('/Users/Public').catch(()=>[]);return(u||[]).map(x=>({id:x.Id,name:x.Name,hasPw:!!x.HasPassword,img:x.PrimaryImageTag?`${S.api||S.server}/Users/${x.Id}/Images/Primary?tag=${x.PrimaryImageTag}&maxWidth=320`:null}))},
+  userImg(x){return x.PrimaryImageTag?`${S.api||S.server}/Users/${x.Id}/Images/Primary?tag=${x.PrimaryImageTag}&maxWidth=320`:null},
   async login(name,pw){
     const dev=devFor(name);
     const r=await jf('/Users/AuthenticateByName',{method:'POST',token:'',dev,body:{Username:name,Pw:pw||''}});
@@ -892,7 +957,7 @@ const Real={
   },
   async resumeSession(rec){
     const dev=rec.dev||devFor(rec.name);
-    const x=await jf('/Users/Me',{token:rec.token,dev});
+    const x=await jf(S.kind==='emby'?`/Users/${rec.id}`:'/Users/Me',{token:rec.token,dev});
     S.token=rec.token;S.devId=dev;
     return{id:x.Id,name:x.Name,img:this.userImg(x),token:rec.token,admin:!!x.Policy?.IsAdministrator,dev};
   },
@@ -972,10 +1037,11 @@ const Real={
     if(!custom&&(ms.SupportsDirectPlay||ms.SupportsDirectStream)){
       const q=new URLSearchParams({Static:'true',mediaSourceId:ms.Id,deviceId:S.devId||S.deviceId,ApiKey:S.token,api_key:S.token,PlaySessionId:ps||''});if(ms.ETag)q.set('Tag',ms.ETag);if(ms.LiveStreamId)q.set('LiveStreamId',ms.LiveStreamId);
       const ext=(ms.Container||'mp4').split(',')[0];
-      return{...base,hls:false,method:ms.SupportsDirectPlay?'DirectPlay':'DirectStream',url:`${S.server}/Videos/${it.id}/stream.${ext}?${q}`};
+      return{...base,hls:false,method:ms.SupportsDirectPlay?'DirectPlay':'DirectStream',url:`${S.api||S.server}/Videos/${it.id}/stream.${ext}?${q}`};
     }
     if(ms.SupportsTranscoding&&ms.TranscodingUrl){
-      let url=S.server+(ms.TranscodingUrl.startsWith('/')?'':'/')+ms.TranscodingUrl;
+      let url=(S.api||S.server)+(ms.TranscodingUrl.startsWith('/')?'':'/')+ms.TranscodingUrl;
+      if(S.kind==='emby'&&!/api_key=/i.test(url))url+=`&api_key=${S.token}`;
       if(aIdx!=null&&!/AudioStreamIndex=/i.test(url))url+=`&AudioStreamIndex=${aIdx}`;
       if(burn!=null&&!/SubtitleStreamIndex=/i.test(url))url+=`&SubtitleStreamIndex=${burn}&SubtitleMethod=Encode`;
       if(!/SegmentLength=/i.test(url))url+='&SegmentLength=3';
@@ -984,7 +1050,7 @@ const Real={
     throw new Error('This title can’t be streamed to a browser (the server does not allow transcoding for this profile).');
   },
   async subtitles(src,sub){
-    const r=await fetch(`${S.server}/Videos/${src.item.id}/${src.msId}/Subtitles/${sub.index}/0/Stream.vtt`,{headers:{'Authorization':authHeader()}});
+    const r=await fetch(`${S.api||S.server}/Videos/${src.item.id}/${src.msId}/Subtitles/${sub.index}/Stream.vtt?api_key=${S.token}`,{headers:apiHeaders()});
     if(!r.ok)throw new Error(r.status);return parseVTT(await r.text());
   },
   report(kind,src,pos,paused){
@@ -992,7 +1058,370 @@ const Real={
     jf(path,{method:'POST',body:{ItemId:src.item.id,MediaSourceId:src.msId,PlaySessionId:src.ps,PositionTicks:Math.floor((pos||0)*1e7),IsPaused:!!paused,PlayMethod:src.method,CanSeek:true}}).catch(()=>{});
     if(kind==='stop'&&src.hls)jf(`/Videos/ActiveEncodings?deviceId=${S.devId||S.deviceId}&playSessionId=${src.ps}`,{method:'DELETE'}).catch(()=>{});
   },
-  dashboard(){return S.server+'/web/#/dashboard/users'},
+  dashboard(){return S.kind==='emby'?S.server+'/web/index.html':S.server+'/web/#/dashboard/users'},
+  prepare(){return Promise.resolve()}
+};
+
+/* =====================================================================
+   Plex backend (Plex Media Server + plex.tv sign-in)
+   ===================================================================== */
+const PLEX_TV='https://plex.tv';
+function plexId(){return {'X-Plex-Product':'Lantern','X-Plex-Version':'1.3.0','X-Plex-Client-Identifier':S.deviceId,'X-Plex-Platform':'Chrome','X-Plex-Platform-Version':'120','X-Plex-Device':'Browser','X-Plex-Device-Name':'Lantern'}}
+/* everything goes in the query string so requests stay CORS-simple */
+function plexQS(params={},token){const q=new URLSearchParams({...plexId(),...params});const t=token===undefined?S.token:token;if(t)q.set('X-Plex-Token',t);return q.toString()}
+async function plexFetch(url,{method='GET',params={},token}={}){
+  const r=await fetch(url+(url.includes('?')?'&':'?')+plexQS(params,token),{method,headers:{Accept:'application/json'}});
+  if(!r.ok){const e=new Error(`${r.status} ${r.statusText}`);e.status=r.status;throw e}
+  const t=await r.text();if(!t)return null;try{return JSON.parse(t)}catch{return{xml:t}}
+}
+const px=(path,params,token)=>plexFetch(S.server+path,{params,token});
+const ptv=(path,opts={})=>plexFetch(PLEX_TV+path,opts);
+const mc=r=>r?.MediaContainer||{};
+function pimg(path,w,h){
+  if(!path)return null;
+  return `${S.server}/photo/:/transcode?${new URLSearchParams({width:w,height:h,minSize:1,upscale:1,url:path,'X-Plex-Token':S.token})}`;
+}
+function praw(path){if(!path)return null;if(/^https?:/.test(path))return path;return `${S.server}${path}${path.includes('?')?'&':'?'}X-Plex-Token=${S.token}`}
+const PTYPE={movie:'Movie',show:'Series',episode:'Episode',season:'Season'};
+function pnorm(m){
+  const type=PTYPE[m.type]||m.type,ep=type==='Episode';
+  const dur=m.duration||0,off=m.viewOffset||0;
+  const art=m.art||m.grandparentArt||m.parentArt;
+  const logoImg=(m.Image||[]).find(x=>x.type==='clearLogo');
+  const it={id:String(m.ratingKey),name:m.title,type,year:m.year,overview:m.summary||'',genres:(m.Genre||[]).map(g=>g.tag),rating:m.contentRating,score:m.audienceRating||m.rating,
+    runtime:dur?Math.round(dur/60000):null,ticks:dur*1e4,posTicks:off*1e4,progress:dur&&off?off/dur*100:(m.viewCount&&!off?100:0),played:!!m.viewCount,
+    seriesId:m.grandparentRatingKey?String(m.grandparentRatingKey):undefined,seriesName:m.grandparentTitle,seasonId:m.parentRatingKey?String(m.parentRatingKey):undefined,season:m.parentIndex,episode:m.index,
+    childCount:m.childCount,backdrop:pimg(art,1920,1080),thumb:ep?pimg(m.thumb,720,405):pimg(art||m.thumb,720,405),thumbHasTitle:false,
+    poster:pimg(ep?(m.grandparentThumb||m.parentThumb):m.thumb,500,750),logo:logoImg?praw(logoImg.url):null,
+    studios:m.studio?[m.studio]:[],tagline:m.tagline};
+  const people=[...(m.Role||[]).map(p=>({name:p.tag,role:'Actor'})),...(m.Director||[]).map(p=>({name:p.tag,role:'Director'})),...(m.Writer||[]).map(p=>({name:p.tag,role:'Writer'}))];
+  if(people.length)it.people=people;
+  if(!it.thumb)it.thumb=it.poster;if(!it.backdrop)it.backdrop=it.thumb;
+  const favs=plexFavs();it.fav=favs.includes(it.id);
+  const prev=ITEMS.get(it.id)||{};
+  ITEMS.set(it.id,Object.assign(prev,it,{people:it.people||prev.people||[]}));
+  return ITEMS.get(it.id);
+}
+const plexFavKey=()=>`plexfav|${S.server}|${S.user?.id||''}`;
+function plexFavs(){return LS.get(plexFavKey(),[])}
+const PSORT={Random:'addedAt:desc',CommunityRating:'audienceRating:desc','CommunityRating,SortName':'audienceRating:desc',DateCreated:'addedAt:desc',PremiereDate:'originallyAvailableAt:desc',SortName:'titleSort'};
+const plexAcctKey=()=>`plexacct|${S.server}`;
+const Plex={
+  _sections:null,_genres:{},
+  async info(){
+    const id=mc(await px('/identity',{},''));
+    S.plexMachine=id.machineIdentifier;S.version=id.version;
+    let name=LS.get('plexname|'+S.server,null);
+    if(!name){try{name=mc(await px('/',{},S.token||'')).friendlyName}catch{}}
+    return{name:name||'Plex',version:id.version};
+  },
+  /* Plex Home users become profiles once someone has signed in with a plex.tv account */
+  async users(){
+    const acct=LS.get(plexAcctKey(),null);if(!acct)return[];
+    try{
+      const r=await ptv('/api/v2/home/users',{token:acct});const list=Array.isArray(r)?r:(r?.users||[]);
+      return list.map(u=>({id:String(u.id),uuid:u.uuid,name:u.title||u.username,img:u.thumb||null,hasPw:!!u.protected}));
+    }catch{return[]}
+  },
+  async serverToken(acctToken){
+    try{
+      const r=await ptv('/api/v2/resources',{params:{includeHttps:1,includeRelay:1},token:acctToken});
+      const res=(Array.isArray(r)?r:[]).find(x=>x.clientIdentifier===S.plexMachine);
+      return res?.accessToken||acctToken;
+    }catch{return acctToken}
+  },
+  async meFromAccount(acctToken){
+    const u=await ptv('/api/v2/user',{token:acctToken});
+    const token=await this.serverToken(acctToken);
+    S.token=token;
+    return{id:String(u.id),name:u.title||u.username,img:u.thumb||null,token,acct:acctToken,admin:!!(u.homeAdmin||u.admin)};
+  },
+  async login(name,pin){
+    const acct=LS.get(plexAcctKey(),null);if(!acct){const e=new Error('Sign in with Plex first.');e.status=401;throw e}
+    const users=await this.users(),u=users.find(x=>x.name.toLowerCase()===String(name).toLowerCase());
+    if(!u){const e=new Error('There is no Plex Home user with that name.');throw e}
+    let sw;
+    try{sw=await plexFetch(`${PLEX_TV}/api/v2/home/users/${u.uuid}/switch`,{method:'POST',params:pin?{pin}:{},token:acct})}
+    catch(e){if(e.status===401||e.status===403){e.message='Incorrect PIN.';e.status=401}throw e}
+    return this.meFromAccount(sw.authToken||sw.authenticationToken);
+  },
+  async resumeSession(rec){
+    await px('/library/sections',{},rec.token);
+    S.token=rec.token;return{...rec};
+  },
+  async logout(){S.token=''},
+  /* plex.tv link code sign-in; resolves with the signed-in account token */
+  async linkPin(){const p=await plexFetch(`${PLEX_TV}/api/v2/pins`,{method:'POST',token:''});return{id:p.id,code:p.code}},
+  async pollPin(id){const p=await ptv(`/api/v2/pins/${id}`,{token:''});return p?.authToken||null},
+  async sections(){
+    if(this._sections)return this._sections;
+    const d=mc(await px('/library/sections')).Directory||[];
+    return this._sections=d.filter(x=>x.type==='movie'||x.type==='show').map(x=>({key:x.key,type:x.type,title:x.title}));
+  },
+  async secsFor(types){const t=(types||'Movie,Series').split(',');return(await this.sections()).filter(s=>(s.type==='movie'&&t.includes('Movie'))||(s.type==='show'&&t.includes('Series')))},
+  async sectionGenres(sec){
+    if(this._genres[sec.key])return this._genres[sec.key];
+    const d=mc(await px(`/library/sections/${sec.key}/genre`)).Directory||[];
+    return this._genres[sec.key]=d.map(g=>({id:g.key,title:g.title}));
+  },
+  async query(o={}){
+    const limit=o.limit||24;
+    if(o.search){
+      const r=mc(await px('/hubs/search',{query:o.search,limit:30}));const out=[];
+      for(const h of r.Hub||[])for(const m of h.Metadata||[])if(m.type==='movie'||m.type==='show')out.push(m);
+      return out.slice(0,limit).map(pnorm);
+    }
+    if(o.fav){const ids=plexFavs();if(!ids.length)return[];return(mc(await px(`/library/metadata/${ids.join(',')}`)).Metadata||[]).map(pnorm)}
+    const secs=await this.secsFor(o.types),sort=PSORT[o.sort]||'addedAt:desc',rand=(o.sort||'Random')==='Random';
+    const size=rand?Math.max(limit*3,60):limit;
+    const parts=await Promise.all(secs.map(async sec=>{
+      const params={type:sec.type==='movie'?1:2,sort,'X-Plex-Container-Start':0,'X-Plex-Container-Size':size};
+      if(o.genre){const g=(await this.sectionGenres(sec)).find(x=>x.title===o.genre);if(!g)return[];params.genre=g.id}
+      return mc(await px(`/library/sections/${sec.key}/all`,params)).Metadata||[];
+    }));
+    let all=parts.flat();
+    if(rand)all=shuffle(all);
+    else{const f=sort.split(':')[0],desc=sort.endsWith(':desc');all.sort((a,b)=>{const x=a[f]??'',y=b[f]??'';return(x>y?1:x<y?-1:0)*(desc?-1:1)})}
+    return all.slice(0,limit).map(pnorm);
+  },
+  async onDeck(){return mc(await px('/library/onDeck',{'X-Plex-Container-Size':40})).Metadata||[]},
+  async resume(){return(await this.onDeck()).filter(m=>m.viewOffset>0).slice(0,20).map(pnorm)},
+  async nextUp(seriesId){
+    if(seriesId){const e=await this.firstToWatch(seriesId);return e?[e]:[]}
+    return(await this.onDeck()).filter(m=>m.type==='episode'&&!m.viewOffset).slice(0,20).map(pnorm);
+  },
+  async genres(types){const out=new Set();for(const sec of await this.secsFor(types))for(const g of await this.sectionGenres(sec))out.add(g.title);return[...out]},
+  async detail(id){return pnorm((mc(await px(`/library/metadata/${id}`)).Metadata||[])[0]||{ratingKey:id})},
+  async similar(id){try{return(mc(await px(`/library/metadata/${id}/similar`,{count:12})).Metadata||[]).map(pnorm)}catch{return[]}},
+  async seasons(id){return(mc(await px(`/library/metadata/${id}/children`)).Metadata||[]).filter(m=>m.type==='season').map(m=>({id:String(m.ratingKey),name:m.title}))},
+  async episodes(id,seasonId){return(mc(await px(`/library/metadata/${seasonId}/children`)).Metadata||[]).map(pnorm)},
+  async setFav(id,on){const f=plexFavs().filter(x=>x!==id);if(on)f.unshift(id);LS.set(plexFavKey(),f)},
+  async leaves(showId){return mc(await px(`/library/metadata/${showId}/allLeaves`)).Metadata||[]},
+  async firstToWatch(showId){const l=await this.leaves(showId);const m=l.find(e=>e.viewOffset>0)||l.find(e=>!e.viewCount)||l[0];return m?pnorm(m):null},
+  async playTarget(it){return it.type==='Series'?this.firstToWatch(it.id):it},
+  async nextEpisode(it){if(it.type!=='Episode'||!it.seriesId)return null;const l=await this.leaves(it.seriesId),i=l.findIndex(e=>String(e.ratingKey)===it.id);return i>=0&&l[i+1]?pnorm(l[i+1]):null},
+  async stream(it,o={}){
+    const m=(mc(await px(`/library/metadata/${it.id}`)).Metadata||[])[0];if(!m?.Media?.length)throw new Error('This title has no playable media.');
+    const media=m.Media[0],part=media.Part[0],st=part.Stream||[];
+    const audios=st.filter(x=>x.streamType===2),subs=st.filter(x=>x.streamType===3);
+    const defA=(audios.find(x=>x.selected)||audios[0])?.id;
+    let aIdx=o.audioIndex;if(aIdx==null&&o.audioLang)aIdx=audios.find(x=>x.languageCode===o.audioLang)?.id;if(aIdx==null)aIdx=defA;
+    const lab=x=>x.extendedDisplayTitle||x.displayTitle||x.title||`Track ${x.id}`;
+    const tracks={audio:audios.map(x=>({index:x.id,label:lab(x),lang:x.languageCode})),
+      subs:subs.map(x=>({index:x.id,label:lab(x),lang:x.languageCode,cc:!!x.hearingImpaired||/sdh|\bcc\b/i.test(x.title||''),image:!x.key||/pgs|dvd|vobsub|ass|ssa/i.test(x.codec||'')})),
+      defaultSub:(subs.find(x=>x.selected)||{}).id??-1};
+    const burn=o.burnSub??null,br=o.bitrate??prefs().bitrate;
+    if(aIdx!==defA||burn!=null){
+      const q={allParts:1};if(aIdx!=null)q.audioStreamID=aIdx;q.subtitleStreamID=burn??0;
+      await plexFetch(`${S.server}/library/parts/${part.id}`,{method:'PUT',params:q}).catch(()=>{});
+    }
+    const start=o.start??(it.progress>0&&it.progress<95?(it.posTicks||0)/1e7:0);
+    const a=audios.find(x=>x.id===aIdx),v=st.find(x=>x.streamType===1);
+    const info={container:media.container,vcodec:media.videoCodec,acodec:a?.codec||media.audioCodec,width:media.width,height:media.height,bitrate:(media.bitrate||0)*1000,hdr:/hdr|dovi|pq|hlg/i.test(v?.colorTrc||v?.DOVIPresent?'hdr':'')?'HDR':''};
+    const base={item:it,msId:part.id,ps:null,start,tracks,audioSel:aIdx,burned:burn,info,bitrate:br,plexKey:m.ratingKey,duration:media.duration||m.duration};
+    const vd=document.createElement('video'),can=t=>!!vd.canPlayType(t).replace('no','');
+    const okV=/^(h264|avc)/i.test(media.videoCodec||'')||(/hevc|h265/i.test(media.videoCodec||'')&&can('video/mp4; codecs="hvc1.1.6.L93.B0"'));
+    const okA=/^(aac|mp3|opus|flac)$/i.test(a?.codec||media.audioCodec||'');
+    const direct=/^(mp4|m4v|mov)$/i.test(media.container||'')&&okV&&okA&&aIdx===defA&&burn==null&&(media.bitrate||0)*1000<=br;
+    if(direct)return{...base,hls:false,method:'DirectPlay',url:praw(part.key)};
+    const session=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2));
+    const kbps=Math.round(Math.min(br,40e6)/1000),res=br>=20e6?'1920x1080':br>=8e6?'1280x720':br>=3e6?'854x480':'640x360';
+    const q=new URLSearchParams({...plexId(),'X-Plex-Token':S.token,path:`/library/metadata/${m.ratingKey}`,mediaIndex:0,partIndex:0,protocol:'hls',fastSeek:1,directPlay:0,directStream:1,directStreamAudio:1,
+      videoQuality:100,videoResolution:res,maxVideoBitrate:kbps,subtitleSize:100,audioBoost:100,location:'lan',subtitles:burn!=null?'burn':'none',session,'X-Plex-Session-Identifier':session,copyts:1,offset:0});
+    return{...base,hls:true,method:'Transcode',session,url:`${S.server}/video/:/transcode/universal/start.m3u8?${q}`};
+  },
+  async subtitles(src,sub){
+    const r=await fetch(praw(`/library/streams/${sub.index}`));if(!r.ok)throw new Error(r.status);
+    return parseVTT((await r.text()).replace(/^WEBVTT.*\n/,''));
+  },
+  report(kind,src,pos,paused){
+    const dur=src.duration||(src.item.ticks/1e4)||0,ms=Math.floor((pos||0)*1000);
+    const state=kind==='stop'?'stopped':paused?'paused':'playing';
+    px('/:/timeline',{ratingKey:src.plexKey,key:`/library/metadata/${src.plexKey}`,state,time:ms,duration:dur,playbackTime:ms}).catch(()=>{});
+    if(kind==='stop'){
+      if(dur&&ms/dur>.9)px('/:/scrobble',{key:src.plexKey,identifier:'com.plexapp.plugins.library'}).catch(()=>{});
+      if(src.session)px('/video/:/transcode/universal/stop',{session:src.session}).catch(()=>{});
+    }
+  },
+  dashboard(){return 'https://app.plex.tv/desktop'},
+  prepare(){return Promise.resolve()}
+};
+
+/* =====================================================================
+   IPTV backend: Xtream Codes accounts and M3U playlists
+   (live channels, movies and series; progress and My List are kept on the device)
+   ===================================================================== */
+const IPTV={
+  data:null,_series:{},
+  reset(){this.data=null;this._series={}},
+  get xt(){return S.kind==='xtream'},
+  async xapi(action,params={}){
+    const s=S.src,q=new URLSearchParams({username:s.user,password:s.pass||'',...(action?{action}:{}),...params});
+    return getJSON(`${S.server}/player_api.php?${q}`,{},action&&/streams|series$/.test(action)?60000:15000);
+  },
+  key(k){return `iptv${k}|${S.src?.id||''}`},
+  async info(){
+    if(this.xt){
+      const r=await this.xapi();
+      if(!r||!r.user_info||String(r.user_info.auth)!=='1')throw new Error('wrong username or password');
+      if(r.user_info.status&&!/active/i.test(r.user_info.status))throw new Error('account is '+String(r.user_info.status).toLowerCase());
+      return{name:S.src.name||'IPTV',version:'Xtream'};
+    }
+    await this.load();return{name:S.src.name||'IPTV',version:'M3U'};
+  },
+  async users(){return[]},
+  me(){return{id:'iptv',name:S.src?.user||'Me',token:'iptv'}},
+  async login(){return this.me()},
+  async resumeSession(rec){return{...rec}},
+  async logout(){},
+  async load(){
+    if(this.data)return this.data;
+    const d={live:[],movies:[],series:[],byId:new Map()};
+    const put=it=>{d.byId.set(it.id,it);ITEMS.set(it.id,it);return it};
+    const favs=new Set(LS.get(this.key('fav'),[]));
+    if(this.xt){
+      const[lc,ls,vc,vs,sc,ss]=await Promise.all(['get_live_categories','get_live_streams','get_vod_categories','get_vod_streams','get_series_categories','get_series'].map(a=>this.xapi(a).catch(()=>[])));
+      const cat=a=>new Map((Array.isArray(a)?a:[]).map(c=>[String(c.category_id),c.category_name]));
+      const L=cat(lc),Vc=cat(vc),Sc=cat(sc);
+      for(const x of Array.isArray(ls)?ls:[])d.live.push(put({id:'xl'+x.stream_id,sid:x.stream_id,type:'Live',name:x.name,num:x.num,logo:x.stream_icon||null,thumb:null,group:L.get(String(x.category_id))||'Channels',genres:[L.get(String(x.category_id))||'Channels'],epg:x.epg_channel_id,archive:+x.tv_archive||0}));
+      for(const x of Array.isArray(vs)?vs:[]){const g=Vc.get(String(x.category_id))||'Movies';
+        d.movies.push(put({id:'xv'+x.stream_id,sid:x.stream_id,type:'Movie',name:x.name,year:+(String(x.name).match(/\((\d{4})\)/)||[])[1]||undefined,score:parseFloat(x.rating)||undefined,genres:[g],group:g,
+          poster:x.stream_icon||null,thumb:x.stream_icon||null,backdrop:x.stream_icon||null,logo:null,ext:x.container_extension||'mp4',created:(+x.added||0)*1000,overview:'',fav:favs.has('xv'+x.stream_id)}))}
+      for(const x of Array.isArray(ss)?ss:[]){const g=Sc.get(String(x.category_id))||'Series';const bd=(Array.isArray(x.backdrop_path)?x.backdrop_path[0]:x.backdrop_path)||x.cover;
+        d.series.push(put({id:'xs'+x.series_id,sid:x.series_id,type:'Series',name:x.name,year:+String(x.releaseDate||x.release_date||'').slice(0,4)||undefined,score:parseFloat(x.rating)||undefined,
+          genres:[g,...String(x.genre||'').split(/[,/]/).map(t=>t.trim()).filter(Boolean)].slice(0,3),group:g,poster:x.cover||null,thumb:bd||x.cover||null,backdrop:bd||x.cover||null,logo:null,
+          overview:x.plot||'',created:(+x.last_modified||0)*1000,fav:favs.has('xs'+x.series_id),people:String(x.cast||'').split(',').map(n=>n.trim()).filter(Boolean).slice(0,8).map(n=>({name:n,role:'Actor'}))}))}
+    }else{
+      const r=await fetch(S.server);if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);
+      const txt=await r.text();if(!/#EXTM3U|#EXTINF/i.test(txt))throw new Error('that file is not an M3U playlist');
+      const shows=new Map();let n=0,meta=null;
+      for(const raw of txt.split(/\r?\n/)){
+        const line=raw.trim();if(!line)continue;
+        if(line.startsWith('#EXTINF')){
+          const attr=k=>(line.match(new RegExp(k+'="([^"]*)"','i'))||[])[1]||'';
+          meta={name:line.slice(line.lastIndexOf(',')+1).trim()||attr('tvg-name'),logo:attr('tvg-logo'),group:attr('group-title')||'Channels',epg:attr('tvg-id')};continue}
+        if(line.startsWith('#')||!meta)continue;
+        const url=line,id='m'+(n++),m=meta;meta=null;
+        const se=m.name.match(/^(.*?)[\s._-]*S(\d{1,2})\s*E(\d{1,3})\b/i);
+        const vod=/\/(movie|series)\//i.test(url)||/\.(mp4|mkv|avi|mov|m4v)(\?|$)/i.test(url);
+        if(se&&vod){
+          const show=se[1].replace(/[\s._-]+$/,'').trim()||m.name,sk='ms'+show.toLowerCase();
+          let sh=shows.get(sk);
+          if(!sh){sh=put({id:sk,type:'Series',name:show,genres:[m.group],group:m.group,poster:m.logo||null,thumb:m.logo||null,backdrop:m.logo||null,logo:null,overview:'',fav:favs.has(sk),eps:[]});shows.set(sk,sh);d.series.push(sh)}
+          sh.eps.push(put({id,type:'Episode',name:m.name,url,seriesId:sk,seriesName:show,season:+se[2],episode:+se[3],seasonId:sk+':'+(+se[2]),thumb:m.logo||sh.thumb,backdrop:sh.backdrop,poster:sh.poster,overview:'',genres:[m.group]}));
+        }else if(vod){
+          d.movies.push(put({id,type:'Movie',name:m.name,year:+(m.name.match(/\((\d{4})\)/)||[])[1]||undefined,genres:[m.group],group:m.group,poster:m.logo||null,thumb:m.logo||null,backdrop:m.logo||null,logo:null,url,overview:'',created:n,fav:favs.has(id)}));
+        }else{
+          d.live.push(put({id,type:'Live',name:m.name,num:d.live.length+1,logo:m.logo||null,thumb:null,group:m.group,genres:[m.group],url,epg:m.epg}));
+        }
+      }
+      for(const sh of shows.values())sh.eps.sort((a,b)=>a.season-b.season||a.episode-b.episode);
+    }
+    this.applyProgress(d);
+    return this.data=d;
+  },
+  prog(){return LS.get(this.key('prog'),{})},
+  applyProgress(d){const p=this.prog();for(const[id,v]of Object.entries(p)){const it=d.byId.get(id)||ITEMS.get(id);if(it){it.posTicks=v.pos*1e7;it.ticks=(v.dur||0)*1e7;it.progress=v.dur?v.pos/v.dur*100:0;it.runtime=it.runtime||Math.round((v.dur||0)/60)||null}}},
+  pool(types){const d=this.data,t=(types||'Movie,Series').split(',');return[...(t.includes('Movie')?d.movies:[]),...(t.includes('Series')?d.series:[])]},
+  async query(o={}){
+    const d=await this.load();let a=this.pool(o.types);
+    if(o.search){const q=o.search.toLowerCase();a=[...a,...d.live].filter(i=>i.name.toLowerCase().includes(q))}
+    if(o.fav){const f=LS.get(this.key('fav'),[]);a=f.map(id=>d.byId.get(id)).filter(Boolean)}
+    if(o.genre)a=a.filter(i=>i.genres.includes(o.genre));
+    if(o.imageTypes)a=a.filter(i=>i.backdrop);
+    const s=o.sort||'Random';
+    if(s==='Random')a=shuffle(a);
+    else a=[...a].sort((x,y)=>s.startsWith('CommunityRating')?(y.score||0)-(x.score||0):s==='PremiereDate'?(y.year||0)-(x.year||0):s==='SortName'?x.name.localeCompare(y.name):(y.created||0)-(x.created||0));
+    return a.slice(0,o.limit||24);
+  },
+  async resume(){
+    const d=await this.load(),p=this.prog();
+    return Object.entries(p).filter(([,v])=>v.dur&&v.pos/v.dur>.02&&v.pos/v.dur<.95).sort((a,b)=>b[1].t-a[1].t).map(([id])=>d.byId.get(id)||ITEMS.get(id)).filter(Boolean).slice(0,20);
+  },
+  async nextUp(){return[]},
+  async genres(types){
+    const d=await this.load(),count=new Map();
+    for(const i of this.pool(types))count.set(i.group,(count.get(i.group)||0)+1);
+    return[...count].filter(([,c])=>c>=4).sort((a,b)=>b[1]-a[1]).slice(0,30).map(([g])=>g);
+  },
+  async detail(id){
+    const d=await this.load(),it=d.byId.get(id)||ITEMS.get(id);if(!it)return null;
+    if(this.xt&&it.type==='Movie'&&!it._full){
+      try{const r=await this.xapi('get_vod_info',{vod_id:it.sid}),i=r?.info||{};
+        Object.assign(it,{_full:1,overview:i.plot||i.description||it.overview,year:+String(i.releasedate||'').slice(0,4)||it.year,runtime:i.duration_secs?Math.round(i.duration_secs/60):it.runtime,
+          backdrop:(Array.isArray(i.backdrop_path)?i.backdrop_path[0]:i.backdrop_path)||it.backdrop,score:parseFloat(i.rating)||it.score,
+          genres:i.genre?String(i.genre).split(/[,/]/).map(t=>t.trim()).filter(Boolean):it.genres,
+          people:[...String(i.cast||i.actors||'').split(',').map(n=>n.trim()).filter(Boolean).slice(0,10).map(n=>({name:n,role:'Actor'})),...String(i.director||'').split(',').map(n=>n.trim()).filter(Boolean).map(n=>({name:n,role:'Director'}))],
+          ext:r?.movie_data?.container_extension||it.ext})}catch{}
+    }
+    if(it.type==='Series')await this.seriesInfo(it).catch(()=>{});
+    return it;
+  },
+  async seriesInfo(it){
+    if(it.eps&&!this.xt)return it;
+    if(this._series[it.id])return this._series[it.id];
+    const r=await this.xapi('get_series_info',{series_id:it.sid}),info=r?.info||{},eps=[];
+    for(const[sn,list]of Object.entries(r?.episodes||{}))for(const e of list||[]){
+      const ep={id:'xe'+e.id,eid:e.id,type:'Episode',name:e.title||`Episode ${e.episode_num}`,seriesId:it.id,seriesName:it.name,season:+e.season||+sn,episode:+e.episode_num,seasonId:it.id+':'+(+e.season||+sn),
+        overview:e.info?.plot||'',runtime:e.info?.duration_secs?Math.round(e.info.duration_secs/60):null,thumb:e.info?.movie_image||it.thumb,backdrop:it.backdrop,poster:it.poster,ext:e.container_extension||'mp4',genres:it.genres};
+      ITEMS.set(ep.id,ep);this.data?.byId.set(ep.id,ep);eps.push(ep);
+    }
+    eps.sort((a,b)=>a.season-b.season||a.episode-b.episode);
+    Object.assign(it,{eps,overview:info.plot||it.overview,childCount:new Set(eps.map(e=>e.season)).size,
+      people:String(info.cast||'').split(',').map(n=>n.trim()).filter(Boolean).slice(0,10).map(n=>({name:n,role:'Actor'}))});
+    this.applyProgress(this.data);
+    return this._series[it.id]=it;
+  },
+  async similar(id){const d=await this.load(),it=d.byId.get(id);if(!it)return[];return shuffle(this.pool(it.type==='Series'?'Series':'Movie').filter(x=>x.id!==id&&x.group===it.group)).slice(0,9)},
+  async seasons(id){const it=await this.seriesInfo((await this.load()).byId.get(id));return[...new Set(it.eps.map(e=>e.season))].map(n=>({id:id+':'+n,name:`Season ${n}`}))},
+  async episodes(id,seasonId){const it=await this.seriesInfo((await this.load()).byId.get(id));return it.eps.filter(e=>e.seasonId===seasonId)},
+  async setFav(id,on){const f=LS.get(this.key('fav'),[]).filter(x=>x!==id);if(on)f.unshift(id);LS.set(this.key('fav'),f);const it=ITEMS.get(id);if(it)it.fav=on},
+  async playTarget(it){
+    if(it.type!=='Series')return it;
+    const s=await this.seriesInfo(it),p=this.prog();
+    return s.eps.find(e=>p[e.id]&&p[e.id].pos/(p[e.id].dur||1)<.95)||s.eps.find(e=>!p[e.id])||s.eps[0]||null;
+  },
+  async nextEpisode(it){
+    if(it.type!=='Episode')return null;
+    const s=await this.seriesInfo((await this.load()).byId.get(it.seriesId)||ITEMS.get(it.seriesId));const i=s.eps.findIndex(e=>e.id===it.id);return i>=0?s.eps[i+1]||null:null;
+  },
+  url(it){
+    if(it.url)return it.url;
+    const s=S.src,base=`${S.server}`,u=encodeURIComponent(s.user),p=encodeURIComponent(s.pass||'');
+    if(it.type==='Live')return `${base}/live/${u}/${p}/${it.sid}.m3u8`;
+    if(it.type==='Episode')return `${base}/series/${u}/${p}/${it.eid}.${it.ext||'mp4'}`;
+    return `${base}/movie/${u}/${p}/${it.sid}.${it.ext||'mp4'}`;
+  },
+  async stream(it,o={}){
+    const url=this.url(it),live=it.type==='Live';
+    const hls=/\.m3u8(\?|$)/i.test(url),ts=!hls&&(live||/\.ts(\?|$)/i.test(url));
+    const start=live?0:(o.start??(it.progress>0&&it.progress<95?(it.posTicks||0)/1e7:0));
+    const ext=(url.match(/\.(\w{2,4})(\?|$)/)||[])[1]||'';
+    return{item:it,msId:it.id,ps:null,start,tracks:{audio:[],subs:[]},audioSel:null,burned:null,live,hls,mpegts:ts,method:'DirectPlay',url,
+      info:{container:ext,vcodec:'',acodec:'',width:0,height:0,bitrate:0,hdr:''},bitrate:o.bitrate??prefs().bitrate};
+  },
+  async subtitles(){return[]},
+  report(kind,src,pos){
+    if(src.live||!pos)return;
+    const p=this.prog(),dur=M.duration&&isFinite(M.duration)?M.duration:(src.item.runtime||0)*60;
+    p[src.item.id]={pos,dur,t:Date.now()};
+    const keys=Object.keys(p);if(keys.length>300)for(const k of keys.sort((a,b)=>p[a].t-p[b].t).slice(0,keys.length-300))delete p[k];
+    LS.set(this.key('prog'),p);this.applyProgress(this.data||{byId:new Map()});
+  },
+  /* Live TV page */
+  async live(){
+    const d=await this.load(),groups=new Map();
+    for(const c of d.live){if(!groups.has(c.group))groups.set(c.group,[]);groups.get(c.group).push(c)}
+    return[...groups].map(([name,chs])=>({name,channels:chs}));
+  },
+  async nowPlaying(ch){
+    if(!this.xt)return null;
+    try{const r=await this.xapi('get_short_epg',{stream_id:ch.sid,limit:2});const l=r?.epg_listings||[];
+      const dec=t=>{try{return decodeURIComponent(escape(atob(t||'')))}catch{return t||''}};
+      const now=Date.now()/1000,cur=l.find(e=>+e.start_timestamp<=now&&+e.stop_timestamp>now)||l[0];
+      return cur?{title:dec(cur.title),start:+cur.start_timestamp,end:+cur.stop_timestamp}:null}catch{return null}
+  },
+  dashboard(){return null},
   prepare(){return Promise.resolve()}
 };
 
@@ -1175,24 +1604,120 @@ function setServerName(n){
   ['#c-logo','#p-logo','#n-logo'].forEach(s=>$(s).innerHTML=logoHTML(n));
   const len=[...n].length;$('#n-logo').style.fontSize=(len>12?Math.max(20,34*12/len):34)+'px';
   $('#p-logo').style.fontSize=(len>12?Math.max(24,40*12/len):40)+'px';
-  $('#f-srv').textContent=S.demo?'Demo mode · generated titles and films':`${n} · Jellyfin ${S.version||''}`;
+  $('#f-srv').textContent=S.demo?'Demo mode · generated titles and films':`${n} · ${KIND_NAME[S.kind]||'Jellyfin'} ${S.version||''}`;
 }
 $('#c-logo').innerHTML=logoHTML('Lantern');
 
-$('#c-form').addEventListener('submit',async e=>{
-  e.preventDefault();let u=$('#c-url').value.trim();if(!u)return;
-  if(!/^https?:\/\//i.test(u))u='http://'+u;u=u.replace(/\/+$/,'').replace(/\/web(\/.*)?$/,'');
-  $('#c-err').textContent='';$('#c-go').disabled=true;$('#c-go').textContent='Connecting…';
-  try{await connect(u,true)}catch(err){
-    $('#c-err').textContent=location.protocol==='https:'&&u.startsWith('http:')?'This page is on HTTPS, so the browser blocks an HTTP server. Use an HTTPS server address.':`Couldn't reach a Jellyfin server at that address (${err.message}).`;
-  }finally{$('#c-go').disabled=false;$('#c-go').textContent='Connect'}
+/* ---------- sources: Jellyfin / Emby / Plex servers and IPTV accounts ---------- */
+const KIND_NAME={jellyfin:'Jellyfin',emby:'Emby',plex:'Plex',xtream:'IPTV',m3u:'IPTV'};
+const SOURCES={
+  all(){return LS.get('sources',[])},
+  save(src){const a=this.all().filter(x=>x.id!==src.id);a.unshift(src);LS.set('sources',a.slice(0,12))},
+  remove(id){LS.set('sources',this.all().filter(x=>x.id!==id))}
+};
+function srcId(kind,url,user){return `${kind}|${String(url).replace(/\/+$/,'').toLowerCase()}|${user||''}`}
+function normUrl(u){u=String(u||'').trim();if(!u)return'';if(!/^https?:\/\//i.test(u))u='http://'+u;return u.replace(/\/+$/,'').replace(/\/web(\/.*)?$/,'')}
+function renderSaved(){
+  const list=SOURCES.all(),el=$('#c-saved');
+  el.innerHTML=list.length?`<div class="c-saved-h">Your sources</div>`+list.map(x=>`<div class="c-src" data-sid="${esc(x.id)}" tabindex="0"><span class="k k-${x.kind}">${KIND_NAME[x.kind]||x.kind}</span><span class="n">${esc(x.name||x.url)}</span><span class="u">${esc(x.kind==='xtream'?x.user+' @ '+x.url.replace(/^https?:\/\//,''):x.url.replace(/^https?:\/\//,''))}</span><button type="button" class="x" data-rm="${esc(x.id)}" aria-label="Remove">${I.close}</button></div>`).join(''):'';
+}
+$('#c-saved').addEventListener('click',async e=>{
+  const rm=e.target.closest('[data-rm]');if(rm){e.stopPropagation();SOURCES.remove(rm.dataset.rm);renderSaved();return}
+  const row=e.target.closest('.c-src');if(!row)return;
+  const src=SOURCES.all().find(x=>x.id===row.dataset.sid);if(!src)return;
+  $('#c-err').textContent='';row.classList.add('busy');
+  try{await connectSource(src,true)}catch(err){$('#c-err').textContent=`Couldn't connect to ${src.name||src.url} (${err.message}).`}finally{row.classList.remove('busy')}
 });
-$('#c-demo').onclick=()=>{S.demo=true;B=Demo;LS.set('server','demo');startIntro('Lantern',true)};
+$$('.c-tabs button').forEach(b=>b.onclick=()=>{$$('.c-tabs button').forEach(x=>x.classList.toggle('on',x===b));$$('.c-pane').forEach(p=>p.classList.toggle('on',p.dataset.pane===b.dataset.tab));$('#c-err').textContent=''});
+$$('#c-iptv input[name=ik]').forEach(r=>r.onchange=()=>{const x=$('#c-iptv input[name=ik]:checked').value==='xtream';$('.ik-x').hidden=!x;$('.ik-m').hidden=x});
+function showConnect(){renderSaved();show('s-connect')}
 
-async function connect(url,gesture){
-  S.server=url;S.demo=false;B=Real;
-  const info=await B.info();S.version=info.version;LS.set('server',url);
-  startIntro(info.name,gesture);
+async function getJSON(url,opts={},ms=7000){
+  const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
+  try{const r=await fetch(url,{...opts,signal:c.signal});if(!r.ok){const e=new Error(`${r.status} ${r.statusText}`);e.status=r.status;throw e}return await r.json()}
+  finally{clearTimeout(t)}
+}
+/* find out what's at an address: Jellyfin, Emby or Plex (trying the usual ports when none is given) */
+async function detectKind(url){
+  const u=new URL(url),cands=[url];
+  if(!u.port){cands.push(`${u.protocol}//${u.hostname}:8096`,`${u.protocol}//${u.hostname}:32400`)}
+  let last=null;
+  for(const c of cands){
+    try{const i=await getJSON(c+'/System/Info/Public');return{kind:/jellyfin/i.test(i.ProductName||'')||parseInt(i.Version)>=10?'jellyfin':'emby',url:c,name:i.ServerName}}catch(e){last=e}
+    try{const i=await getJSON(c+'/emby/System/Info/Public');return{kind:'emby',url:c,name:i.ServerName}}catch(e){last=e}
+    try{const i=await getJSON(c+'/identity',{headers:{Accept:'application/json'}});if(i.MediaContainer)return{kind:'plex',url:c}}catch(e){last=e}
+  }
+  throw new Error(last?.name==='AbortError'?'no reply':'no Jellyfin, Emby or Plex server found');
+}
+$('#c-form').addEventListener('submit',async e=>{
+  e.preventDefault();const u=normUrl($('#c-url').value);if(!u)return;
+  $('#c-err').textContent='';$('#c-go').disabled=true;$('#c-go').textContent='Connecting…';
+  try{const d=await detectKind(u);await connectSource({id:srcId(d.kind,d.url),kind:d.kind,url:d.url,name:d.name},true)}
+  catch(err){$('#c-err').textContent=location.protocol==='https:'&&u.startsWith('http:')?'This page is on HTTPS, so the browser blocks an HTTP server. Use an HTTPS address.':`Couldn't connect to ${u} (${err.message}).`}
+  finally{$('#c-go').disabled=false;$('#c-go').textContent='Connect'}
+});
+$('#c-iptv').addEventListener('submit',async e=>{
+  e.preventDefault();const xt=$('#c-iptv input[name=ik]:checked').value==='xtream';
+  let src;
+  if(xt){const url=normUrl($('#x-url').value),user=$('#x-user').value.trim(),pass=$('#x-pass').value;if(!url||!user){$('#c-err').textContent='Enter the server URL and username.';return}
+    src={id:srcId('xtream',url,user),kind:'xtream',url,user,pass}}
+  else{const m=String($('#m-url').value||'').trim();if(!m){$('#c-err').textContent='Enter the playlist URL.';return}
+    const mu=/^https?:/i.test(m)?m:'http://'+m;src={id:srcId('m3u',mu),kind:'m3u',url:mu,name:$('#m-name').value.trim()||''}}
+  $('#c-err').textContent='';$('#i-go').disabled=true;$('#i-go').textContent='Loading…';
+  try{await connectSource(src,true)}catch(err){$('#c-err').textContent=`Couldn't load that IPTV source (${err.message}).`}
+  finally{$('#i-go').disabled=false;$('#i-go').textContent='Add IPTV'}
+});
+$('#c-demo').onclick=()=>{S.demo=true;S.kind='demo';B=Demo;LS.set('server','demo');startIntro('Lantern',true)};
+$('#c-plex-go').onclick=()=>plexAccountFlow();
+
+async function connectSource(src,gesture){
+  S.demo=false;S.kind=src.kind;S.src=src;S.server=normUrl(src.url);S.api=S.server+(src.kind==='emby'?'/emby':'');S.token='';S.users=[];
+  B=src.kind==='plex'?Plex:(src.kind==='xtream'||src.kind==='m3u')?IPTV:Real;
+  Plex._sections=null;Plex._genres={};IPTV.reset();
+  const info=await B.info();S.version=info.version;
+  if(info.name&&!src.name)src.name=info.name;
+  SOURCES.save(src);LS.set('server',S.server);LS.set('source',src.id);
+  document.documentElement.classList.toggle('has-live',!!B.live);
+  startIntro(src.name||info.name||KIND_NAME[src.kind],gesture);
+}
+/* the old entry point: an address that is known to be Jellyfin (the server plugin) */
+async function connect(url,gesture){return connectSource({id:srcId('jellyfin',url),kind:'jellyfin',url},gesture)}
+
+/* ---------- Plex: sign in with a link code ---------- */
+function openExternal(url){if(window.LanternNative)LanternNative.openExternal(url);else window.open(url,'_blank','noopener')}
+async function plexLink(box){
+  const pin=await Plex.linkPin();
+  box.innerHTML=`<div class="plink"><p>On your phone or computer, go to</p><p class="u">plex.tv/link</p><p>and enter this code</p><div class="code">${esc(pin.code)}</div><button type="button" class="btn-ghost" id="pl-open">Open plex.tv/link</button><div class="spin" style="margin:18px auto 0;width:32px;height:32px"></div></div>`;
+  $('#pl-open',box).onclick=()=>openExternal('https://plex.tv/link');
+  const until=Date.now()+15*60e3;
+  while(Date.now()<until&&box.isConnected){
+    await sleep(2000);
+    const t=await Plex.pollPin(pin.id).catch(()=>null);if(t)return t;
+  }
+  throw new Error('The code expired. Try again.');
+}
+async function plexAccountFlow(){
+  const box=$('#c-plex'),orig=box.innerHTML;$('#c-err').textContent='';
+  const restore=()=>{box.innerHTML=orig;box.onclick=null;$('#c-plex-go').onclick=()=>plexAccountFlow()};
+  try{
+    const acct=await plexLink(box);
+    box.innerHTML='<div class="spin" style="margin:20px auto"></div>';
+    const r=await ptv('/api/v2/resources',{params:{includeHttps:1,includeRelay:1},token:acct});
+    const servers=(Array.isArray(r)?r:[]).filter(x=>String(x.provides||'').includes('server'));
+    if(!servers.length)throw new Error('No Plex servers on this account.');
+    box.innerHTML=`<div class="c-saved-h">Choose a server</div>`+servers.map((x,i)=>`<div class="c-src" data-pi="${i}" tabindex="0"><span class="k k-plex">Plex</span><span class="n">${esc(x.name)}</span><span class="u">${x.owned?'Your server':'Shared with you'}</span></div>`).join('');
+    const pick=await new Promise(res=>box.onclick=e=>{const row=e.target.closest('[data-pi]');if(row)res(servers[+row.dataset.pi])});
+    box.onclick=null;box.innerHTML='<div class="spin" style="margin:20px auto"></div>';
+    const conns=[...(pick.connections||[])].sort((a,b)=>(b.local-a.local)||(a.relay-b.relay));
+    let url=null;
+    for(const c of conns){try{await getJSON(c.uri+'/identity',{headers:{Accept:'application/json'}},4000);url=c.uri;break}catch{}}
+    if(!url)throw new Error(`Couldn't reach ${pick.name} from this device.`);
+    S.server=normUrl(url);S.plexMachine=pick.clientIdentifier;S.demo=false;
+    LS.set(plexAcctKey(),acct);LS.set('plexname|'+S.server,pick.name);
+    const me=await Plex.meFromAccount(acct);SESS.remember(me);
+    restore();
+    await connectSource({id:srcId('plex',S.server),kind:'plex',url:S.server,name:pick.name},true);
+  }catch(err){restore();$('#c-err').textContent=err.message||'Plex sign-in failed.'}
 }
 
 /* ---------- preferences & remembered sign-ins ---------- */
@@ -1203,7 +1728,7 @@ const SESS={
   key(){return S.demo?'demo':S.server},
   get(){return LS.get('sessions',{})[this.key()]||{users:{}}},
   save(o){const a=LS.get('sessions',{});a[this.key()]=o;LS.set('sessions',a)},
-  remember(u){const o=this.get();o.users[u.id]={id:u.id,name:u.name,img:u.img||null,token:u.token||'',admin:!!u.admin,dev:u.dev||''};o.last=u.id;this.save(o)},
+  remember(u){const o=this.get();o.users[u.id]={id:u.id,name:u.name,img:u.img||null,token:u.token||'',admin:!!u.admin,dev:u.dev||'',...(u.acct?{acct:u.acct}:{})};o.last=u.id;this.save(o)},
   forget(id){const o=this.get();delete o.users[id];if(o.last===id)delete o.last;this.save(o)},
   clearLast(){const o=this.get();delete o.last;this.save(o)},
   user(id){return this.get().users[id]||null}
@@ -1256,6 +1781,7 @@ function jfWebSession(){
   }catch{return null}
 }
 async function autoSession(){
+  if(B.me)return B.me(); /* IPTV: no accounts, go straight in */
   const o=SESS.get();const r=(o.last&&o.users[o.last])||jfWebSession();if(!r||!r.token)return null;
   try{return await B.resumeSession(r)}catch(e){if(e.status===401&&r.name)SESS.forget(r.id);return null}
 }
@@ -1331,8 +1857,17 @@ function dlgLock(u){
     const me=await B.login(u.name,$('#d-pw').value);closeDialog();enterApp(me);
   });
 }
+function dlgPlexLink(){
+  openDialog(`<p class="t">${esc(S.serverName)}</p><h2>Sign in with Plex</h2><div class="c-err"></div><div id="d-plex"></div>`,false,async()=>{});
+  const box=$('#d-plex');
+  plexLink(box).then(async acct=>{
+    LS.set(plexAcctKey(),acct);box.innerHTML='<div class="spin" style="margin:20px auto"></div>';
+    const me=await Plex.meFromAccount(acct);closeDialog();enterApp(me);
+  }).catch(e=>{const er=$('.c-err',DF);if(er)er.textContent=e.message||'Plex sign-in failed'});
+}
 function dlgSignIn(){
-  openDialog(`<p class="t">${esc(S.serverName)}</p><h2>Sign in with your Jellyfin account.</h2><div class="c-err"></div>
+  if(S.kind==='plex')return dlgPlexLink();
+  openDialog(`<p class="t">${esc(S.serverName)}</p><h2>Sign in with your ${KIND_NAME[S.kind]||'Jellyfin'} account.</h2><div class="c-err"></div>
     ${field('d-un','Username','text','username')}${field('d-pw','Password','password','current-password')}<button class="btn-red" type="submit">Sign In</button>`,false,async()=>{
     const n=$('#d-un').value.trim();if(!n)throw new Error('Enter your username.');
     const me=await B.login(n,$('#d-pw').value);closeDialog();enterApp(me);
@@ -1348,6 +1883,7 @@ async function adminToken(){
 function swatches(sel){return `<div class="sw">${AVC.map((c,i)=>`<button type="button" data-c="${i}" class="${i===sel?'on':''}" style="background:${c}" aria-label="Color ${i+1}"></button>`).join('')}</div>`}
 function wireSwatches(onPick){$$('.sw button',DF).forEach(b=>b.onclick=()=>{$$('.sw button',DF).forEach(x=>x.classList.remove('on'));b.classList.add('on');onPick(+b.dataset.c)})}
 function dlgAdd(){
+  if(!B.createUser){if(S.kind==='plex')dlgPlexLink();else toast('This source has no user accounts');return}
   let color=Math.floor(Math.random()*AVC.length);
   openDialog(`<h1>Add Profile</h1><p class="sub">Add a profile for another person watching ${esc(S.serverName)}.</p><div class="c-err"></div>
     <div class="ped"><div class="av" id="d-av">${avatarHTML(null,color)}</div><div class="fs">
@@ -1376,7 +1912,7 @@ function dlgEdit(u){
     <div class="dbtns"><button class="wbtn" type="submit">Save</button><button class="obtn" type="button" id="d-cancel">Cancel</button><button class="obtn" type="button" id="d-del">Delete Profile</button>${SESS.user(u.id)?.token?'<button class="obtn" type="button" id="d-forget">Forget on this device</button>':''}</div>`,true,async()=>{
     const name=$('#d-name').value.trim();if(!name)throw new Error('Please enter a name.');
     setAvColor(u.id,color);
-    if(name!==u.name){const own=SESS.user(u.id)?.token;await B.renameUser(u.id,name,own||await adminToken());const r=SESS.user(u.id);if(r){r.name=name;const o=SESS.get();o.users[u.id]=r;SESS.save(o)}if(self){S.user.name=name}}
+    if(name!==u.name){if(!B.renameUser)throw new Error(`Rename this user in ${KIND_NAME[S.kind]||'the server'} itself.`);const own=SESS.user(u.id)?.token;await B.renameUser(u.id,name,own||await adminToken());const r=SESS.user(u.id);if(r){r.name=name;const o=SESS.get();o.users[u.id]=r;SESS.save(o)}if(self){S.user.name=name}}
     closeDialog();if(self)setupNav();showProfiles(true);
   });
   wireSwatches(c=>{color=c;$('#d-av').innerHTML=avatarHTML(null,c)});$('#d-cancel').onclick=closeDialog;
@@ -1384,6 +1920,7 @@ function dlgEdit(u){
   $('#d-del').onclick=async()=>{
     if(!confirm(`Delete the profile “${u.name}”? This removes the Jellyfin user and their watch history from the server.`))return;
     const err=$('.c-err',DF);
+    if(!B.deleteUser){err.textContent=`Remove this user in ${KIND_NAME[S.kind]||'the server'} itself.`;return}
     try{await B.deleteUser(u.id,await adminToken());SESS.forget(u.id);closeDialog();toast('Profile deleted');showProfiles(true)}
     catch(x){err.textContent=x.status===403||x.status===401?'Only an administrator can delete profiles.':(x.message||'Delete failed')}
   };
@@ -1402,18 +1939,19 @@ async function enterApp(me){
 /* =====================================================================
    Browse
    ===================================================================== */
-function webUrl(route){return S.demo?null:`${S.server}/web/#/${route}`}
+function webUrl(route){if(S.demo)return null;if(S.kind==='plex')return 'https://app.plex.tv/desktop';if(S.kind==='emby')return `${S.server}/web/index.html`;if(S.kind!=='jellyfin')return null;return `${S.server}/web/#/${route}`}
 function setupNav(){
   $('#n-av').innerHTML=avatarHTML(S.user);
   const others=S.users.map((u,i)=>({u,i})).filter(x=>x.u.id!==S.user.id);
   const jfl=(r,l)=>`<div class="mi" data-web="${r}"><span>${l}</span></div>`;
   $('#n-menu').innerHTML=`<div class="arrow-up"></div>`+others.slice(0,5).map(({u,i})=>`<div class="mi" data-sw="${i}"><div class="av">${avatarHTML(u)}</div><span>${esc(u.name)}</span></div>`).join('')+
     `<div class="mi" data-act="profiles"><span>Manage Profiles</span></div><div class="mi" data-act="account"><span>Account &amp; Settings</span></div><hr>`+
-    jfl('mypreferencesmenu','Jellyfin Settings')+jfl('mypreferencesplayback','Playback Settings')+jfl('mypreferencessubtitles','Subtitle Settings')+jfl('mypreferencesdisplay','Display Settings')+
-    (S.user.admin?jfl('dashboard','Server Dashboard')+jfl('dashboard/users','Manage Users'):'')+
-    `${typeof HOSTED!=='undefined'&&HOSTED?'<div class="mi" data-act="classic"><span>Switch to classic Jellyfin</span></div>':''}<div class="mi" data-act="switch"><span>Switch Server</span></div><hr><div class="mi so" data-act="out"><span>Sign out of ${esc(S.serverName)}</span></div>`;
+    (S.kind==='jellyfin'?jfl('mypreferencesmenu','Jellyfin Settings')+jfl('mypreferencesplayback','Playback Settings')+jfl('mypreferencessubtitles','Subtitle Settings')+jfl('mypreferencesdisplay','Display Settings')+
+    (S.user.admin?jfl('dashboard','Server Dashboard')+jfl('dashboard/users','Manage Users'):''):(S.kind==='plex'||S.kind==='emby')?jfl('home',`Open ${KIND_NAME[S.kind]} web app`):'')+
+    `${typeof HOSTED!=='undefined'&&HOSTED?'<div class="mi" data-act="classic"><span>Switch to classic Jellyfin</span></div>':'<div class="mi" data-act="switch"><span>Change Source</span></div>'}<hr><div class="mi so" data-act="out"><span>Sign out of ${esc(S.serverName)}</span></div>`;
 }
-function openWeb(route){const u=webUrl(route);if(!u){toast('Jellyfin settings are available when connected to a real server');return}
+function openWeb(route){const u=webUrl(route);if(!u){toast('Settings for this source are on its own website');return}
+  if(window.LanternNative){LanternNative.openExternal(u);return}
   /* inside the Jellyfin app there are no tabs, so open settings in place (they stay in classic Jellyfin) */
   if(typeof HOSTED!=='undefined'&&HOSTED)location.href=u;else window.open(u,'_blank','noopener')}
 function goClassic(){try{localStorage.setItem('lantern.classic','1')}catch{}location.href=`${S.server}/web/`}
@@ -1427,8 +1965,23 @@ $('#n-menu').addEventListener('click',async e=>{
   if(a==='classic'){goClassic();return}
   if(a==='profiles'){showProfiles(true);return}
   if(a==='out'){await B.logout();SESS.forget(S.user.id);S.user=null;showProfiles()}
-  if(a==='switch'){SESS.clearLast();LS.del('server');S.demo=false;S.users=[];$('#c-url').value='';show('s-connect')}
+  if(a==='switch'){changeSource()}
 });
+/* back to the source list; saved sign-ins stay, so switching back is one tap */
+function changeSource(){closeEverything();LS.del('source');LS.del('server');S.demo=false;S.users=[];S.user=null;$('#c-url').value='';showConnect()}
+
+/* ---------- Live TV ---------- */
+async function renderLive(tok){
+  const main=$('#main');main.innerHTML=`<div class="rows flat" id="rows"><div class="spin" style="margin:60px auto"></div></div>`;
+  const groups=B.live?await B.live().catch(()=>[]):[];if(tok!==pageToken)return;
+  const rows=$('#rows');rows.innerHTML=groups.length?'':'<p class="empty">This source has no live channels.</p>';
+  for(const g of groups.slice(0,80)){const el=rowShell(g.name,false,'live');rows.appendChild(el);fillRow(el,g.channels.slice(0,80),{})}
+  if(B.nowPlaying)for(const g of groups.slice(0,6))for(const ch of g.channels.slice(0,8))
+    B.nowPlaying(ch).then(n=>{if(!n)return;ch.now=n;$$(`.box[data-id="${ch.id}"] .lnow`).forEach(e=>e.textContent=n.title)});
+}
+function liveCardHTML(it){
+  return `<div class="card"><div class="box lv-card" data-id="${it.id}"><div class="lv-logo">${it.logo?`<img class="im" decoding="async" src="${esc(it.logo)}" alt="">`:`<span>${esc(it.name)}</span>`}</div><div class="lv-meta"><b>${it.num?`<i>${it.num}</i> `:''}${esc(it.name)}</b><span class="lnow">${esc(it.now?.title||'')}</span></div></div></div>`;
+}
 
 /* ---------- account & settings page ---------- */
 function renderAccount(){
@@ -1438,8 +1991,8 @@ function renderAccount(){
   const lk=(r,l)=>`<a class="lk" data-web="${r}">${l}</a>`;
   return `<div class="acc-page"><div class="acc"><h1>Account</h1>
     <div class="grp"><h3>Server</h3><div>
-      <div class="line"><b>${esc(S.serverName)}</b><span class="mut">${S.demo?'Demo mode':'Jellyfin '+esc(S.version||'')}</span></div>
-      <div class="line"><span class="mut">${S.demo?'Sample library':esc(S.server)}</span><a class="lk" data-act2="switch">Switch server</a></div>
+      <div class="line"><b>${esc(S.serverName)}</b><span class="mut">${S.demo?'Demo mode':esc((KIND_NAME[S.kind]||'Jellyfin')+' '+(S.version||''))}</span></div>
+      <div class="line"><span class="mut">${S.demo?'Sample library':esc(S.server)}</span><a class="lk" data-act2="switch">Change source</a></div>
     </div></div>
     <div class="grp"><h3>Profile</h3><div>
       <div class="line"><div class="pr"><div class="av">${avatarHTML(u)}</div><div><b>${esc(u.name)}</b><div class="mut">${u.admin?'Administrator':'Member'} · signed in on this device</div></div></div><a class="lk" data-act2="edit">Edit profile</a></div>
@@ -1452,12 +2005,12 @@ function renderAccount(){
       <div class="line"><span>Hover previews</span>${tg('previews',p.previews)}</div>
       <div class="line"><span>Intro sound</span>${tg('introSound',p.introSound)}</div>
     </div></div>
-    <div class="grp"><h3>Jellyfin Settings</h3><div>
+    ${S.kind!=='jellyfin'?'':`<div class="grp"><h3>Jellyfin Settings</h3><div>
       <div class="line">${lk('mypreferencesmenu','All settings')}${lk('mypreferencesplayback','Playback')}${lk('mypreferencessubtitles','Subtitles')}</div>
       <div class="line">${lk('mypreferencesdisplay','Display')}${lk('mypreferenceshome','Home screen')}${lk('mypreferencescontrols','Controls')}</div>
       ${u.admin?`<div class="line">${lk('dashboard','Server dashboard')}${lk('dashboard/users','Users')}<span></span></div>`:''}
       <div class="line"><span class="mut">These open in Jellyfin's own web app in a new tab.</span></div>
-    </div></div>
+    </div></div>`}
   </div></div>`;
 }
 function wireAccount(){
@@ -1468,7 +2021,7 @@ function wireAccount(){
     if(k==='edit')dlgEdit(S.users.find(x=>x.id===S.user.id)||S.user);
     if(k==='profiles')showProfiles(true);
     if(k==='out'){await B.logout();SESS.forget(S.user.id);S.user=null;showProfiles()}
-    if(k==='switch'){SESS.clearLast();LS.del('server');S.demo=false;S.users=[];$('#c-url').value='';show('s-connect')}});
+    if(k==='switch')changeSource()});
 }
 /* tap-to-open menus on touch screens */
 function closeMenus(){$$('.dd.open').forEach(d=>d.classList.remove('open'))}
@@ -1499,6 +2052,7 @@ async function go(page,initial,q){
   const label=page==='tv'?'TV Shows':page==='movies'?'Movies':'';
 
   if(page==='account'){main.innerHTML=renderAccount();wireAccount();$('#nav').classList.add('solid');return}
+  if(page==='live'){renderLive(tok);return}
   if(page==='list'||page==='search'){
     main.innerHTML=`<div class="gpage"><h1>${page==='list'?'My List':`Results for “${esc(q)}”`}</h1><div class="grid" id="grid"></div></div>`;
     const items=page==='list'?await B.query({fav:true,sort:'DateCreated',limit:200}):await B.query({search:q,sort:'SortName',order:'Ascending',limit:60});
@@ -1590,6 +2144,7 @@ function titleOverlay(it){
   return `<div class="ttl">${logo?`<img src="${esc(logo)}" alt="">`:`<span>${esc(it.type==='Episode'?it.seriesName:it.name)}</span>`}</div>`;
 }
 function cardHTML(it,opt={}){
+  if(it.type==='Live')return liveCardHTML(it);
   const ep=it.type==='Episode'?`<div class="ep">S${it.season||1}:E${it.episode||1}</div>`:'';
   const nb=opt.newb?(it.type==='Series'?'<div class="nbadge">NEW EPISODES</div>':'<div class="nbadge">RECENTLY ADDED</div>'):'';
   const pb=opt.prog&&it.progress>0&&it.progress<100?`<div class="pb"><i style="width:${Math.max(3,it.progress).toFixed(0)}%"></i></div>`:'';
@@ -1628,7 +2183,7 @@ function previewGeom(box){
   return{r,W,L,T,from:`translate(${(r.left-L).toFixed(1)}px,${(r.top+(r.height-H*s)/2-T).toFixed(1)}px) scale(${s.toFixed(4)})`};
 }
 function showPreview(box){
-  const it=ITEMS.get(box.dataset.id);if(!it||!box.isConnected)return;
+  const it=ITEMS.get(box.dataset.id);if(!it||!box.isConnected||it.type==='Live')return;
   const vw=document.documentElement.clientWidth,r0=box.getBoundingClientRect();
   if(r0.width<10||r0.left<-2||r0.right>vw+2||r0.bottom<0||r0.top>innerHeight)return;
   clearTimeout(pv.hideT);
@@ -1674,7 +2229,7 @@ document.addEventListener('click',async e=>{
     try{await B.setFav(it.id,on);it.fav=on;$$(`[data-fav="${it.id}"]`).forEach(b=>b.innerHTML=on?I.check:I.plus);toast(on?'Added to My List':'Removed from My List')}catch{toast('Could not update My List')}return}
   const l=e.target.closest('[data-like]');if(l){l.classList.toggle('liked');return}
   const m=e.target.closest('[data-more]');if(m){openModal(ITEMS.get(m.dataset.more));return}
-  const box=e.target.closest('#main .card .box[data-id]');if(box){openModal(ITEMS.get(box.dataset.id));return}
+  const box=e.target.closest('#main .card .box[data-id]');if(box){const it=ITEMS.get(box.dataset.id);if(it?.type==='Live')play(it);else openModal(it);return}
   const mlc=e.target.closest('.mlc[data-id]');if(mlc){openModal(ITEMS.get(mlc.dataset.id));return}
 });
 
@@ -1779,7 +2334,8 @@ async function play(it){
     const target=await cachedTarget(it);if(!target)throw new Error('Nothing to play yet.');
     if(target.thumb&&target.type==='Episode')V.poster=target.thumb;
     if(tok!==P.tok)return;
-    $('#p-title').innerHTML=target.type==='Episode'?`<b>${esc(target.seriesName)}</b><span>S${target.season}:E${target.episode} “${esc(target.name)}”</span>`:`<b>${esc(target.name)}</b>`;
+    PL.classList.toggle('live',target.type==='Live');
+    $('#p-title').innerHTML=target.type==='Live'?`<b>${esc(target.name)}</b><span class="lvb">● LIVE</span>`:target.type==='Episode'?`<b>${esc(target.seriesName)}</b><span>S${target.season}:E${target.episode} “${esc(target.name)}”</span>`:`<b>${esc(target.name)}</b>`;
     $('#p-eps').style.display=target.type==='Episode'?'':'none';
     const src=await B.stream(target,{audioLang:prefs().audioLang??null,bitrate:P.q??undefined});if(tok!==P.tok)return;
     teardown(false);
@@ -1787,7 +2343,7 @@ async function play(it){
     B.report('start',src,src.start,false);
     clearInterval(P.iv);P.iv=setInterval(()=>{if(P.src)B.report('progress',P.src,M.currentTime,M.paused)},10000);
     P.next=null;$('#p-next').style.display='none';
-    B.nextEpisode(target).then(n=>{if(tok!==P.tok)return;P.next=n;$('#p-next').style.display=n?'':'none'}).catch(()=>{});
+    if(target.type!=='Live')B.nextEpisode(target).then(n=>{if(tok!==P.tok)return;P.next=n;$('#p-next').style.display=n?'':'none'}).catch(()=>{});
     initialSubs(src);
     wake();
   }catch(err){if(tok===P.tok)fail(err.message||String(err))}
@@ -1801,8 +2357,13 @@ async function attach(src,tok,autoplay){
     dm.volume=+$('#p-vol').value;dm.muted=V.muted;dm.variant=src.audioSel||0;dm.currentTime=src.start||0;
   }else{
     DC.style.display='none';V.style.display='';M=V;
-    if(src.hls&&window.Hls&&Hls.isSupported()){P.hls=new Hls({startPosition:src.start||-1,maxBufferLength:20,maxMaxBufferLength:60,backBufferLength:60,startFragPrefetch:true,enableWorker:true,
-        manifestLoadingTimeOut:20000,manifestLoadingMaxRetry:4,levelLoadingTimeOut:20000,fragLoadingTimeOut:60000,fragLoadingMaxRetry:6,xhrSetup:x=>x.setRequestHeader('Authorization',authHeader())});P.hls.loadSource(src.url);P.hls.attachMedia(V);
+    if(src.mpegts&&window.mpegts&&mpegts.getFeatureList().mseLivePlayback){
+      P.mts=mpegts.createPlayer({type:'mpegts',isLive:!!src.live,url:src.url},{enableWorker:true,liveBufferLatencyChasing:!!src.live,lazyLoad:false});
+      P.mts.attachMediaElement(V);P.mts.load();
+      P.mts.on(mpegts.Events.ERROR,(t,d)=>fail('Playback error: '+(d||t)));
+    }
+    else if(src.hls&&window.Hls&&Hls.isSupported()){P.hls=new Hls({startPosition:src.start||-1,maxBufferLength:20,maxMaxBufferLength:60,backBufferLength:60,startFragPrefetch:true,enableWorker:true,
+        manifestLoadingTimeOut:20000,manifestLoadingMaxRetry:4,levelLoadingTimeOut:20000,fragLoadingTimeOut:60000,fragLoadingMaxRetry:6,xhrSetup:x=>{if(S.kind!=='plex')for(const[k,v]of Object.entries(apiHeaders()))x.setRequestHeader(k,v)}});P.hls.loadSource(src.url);P.hls.attachMedia(V);
       P.hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal){if(d.type===Hls.ErrorTypes.NETWORK_ERROR)P.hls.startLoad();else if(d.type===Hls.ErrorTypes.MEDIA_ERROR)P.hls.recoverMediaError();else fail('Playback error: '+d.details)}});}
     else{V.preload='auto';V.src=src.url;if(src.start)V.addEventListener('loadedmetadata',()=>{V.currentTime=src.start},{once:true})}
   }
@@ -1826,6 +2387,7 @@ function teardown(report=true){
   if(report&&P.src)B.report('stop',P.src,M.currentTime,true);
   clearInterval(P.iv);
   if(P.hls){P.hls.destroy();P.hls=null}
+  if(P.mts){try{P.mts.destroy()}catch{}P.mts=null}
   if(P.demo){P.demo.destroy();P.demo=null}
   V.pause();if(V.getAttribute('src')){V.removeAttribute('src');V.load()}
   M=V;
@@ -1889,6 +2451,8 @@ function selectAudio(index){
 /* ---------- phones: turn sideways while playing ---------- */
 const isPhone=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
 function phoneLandscape(on){
+  /* inside our own Android app: rotate, go full screen and keep the screen on natively */
+  if(window.LanternNative){try{LanternNative.setPlaying(!!on)}catch{}P.fsOn=!!on;return}
   if(!isPhone())return;P.fsOn=on;
   try{
     /* inside the official Android app, its native bridge rotates the screen and hides the system bars */
@@ -2047,12 +2611,12 @@ addEventListener('beforeunload',()=>{if(P.src)B.report('stop',P.src,M.currentTim
 /* =====================================================================
    TV remote navigation (arrows move, OK selects, Back goes back)
    ===================================================================== */
-const TV_UA=/Android TV|GoogleTV|BRAVIA|AFT[A-Z]|Web0S|webOS|NetCast|Tizen|SMART-TV|SmartTV|HbbTV|CrKey|Roku/i;
+const TV_UA=/LanternTV|Android TV|GoogleTV|BRAVIA|AFT[A-Z]|Web0S|webOS|NetCast|Tizen|SMART-TV|SmartTV|HbbTV|CrKey|Roku/i;
 function setTV(on){document.documentElement.classList.toggle('tv',on);if(on)hidePreview(true)}
 if(TV_UA.test(navigator.userAgent))setTV(true);
 addEventListener('mousemove',e=>{if(e.movementX||e.movementY){if(document.documentElement.classList.contains('tv')&&!TV_UA.test(navigator.userAgent))setTV(false)}},{passive:true});
 const BACK_KEYS=new Set(['Escape','GoBack','BrowserBack','Back']),BACK_CODES=new Set([461,10009,27,4]);
-const isBack=e=>BACK_KEYS.has(e.key)||BACK_CODES.has(e.keyCode)||(e.key==='Backspace'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName));
+const isBack=e=>!(window.LanternNative&&(e.keyCode===4||e.key==='GoBack'||e.key==='BrowserBack'))&&BACK_KEYS.has(e.key)||BACK_CODES.has(e.keyCode)||(e.key==='Backspace'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName));
 const DIRS={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
 const visible=el=>{if(!el.isConnected)return false;const r=el.getBoundingClientRect();if(r.width<2||r.height<2)return false;const cs=getComputedStyle(el);return cs.visibility!=='hidden'&&cs.display!=='none'&&r.right>0&&r.left<innerWidth&&r.bottom>-innerHeight*3&&r.top<innerHeight*4};
 function tvScope(){
@@ -2099,6 +2663,17 @@ function tvMove(dx,dy){
     if(score<bs){bs=score;best=el}}
   if(best)tvFocus(best);
 }
+/* the Android app's Back button: returns true when the page handled it, false to leave the app */
+window.lanternBack=()=>{
+  if(PL.classList.contains('on')){if(P.panel){closePanel();return true}closePlayer();return true}
+  if(DLG.classList.contains('on')){closeDialog();return true}
+  if($('.dd.open')){closeMenus();return true}
+  if(MD.classList.contains('on')){closeModal();return true}
+  if($('#s-browse').classList.contains('on')&&(S.page!=='home'||scrollY>40)){if(S.page!=='home')go('home');else scrollTo({top:0,behavior:'smooth'});return true}
+  if($('#s-connect').classList.contains('on')&&SOURCES.all().length&&LS.get('source',null)===null&&S.src){connectSource(S.src,false);return true}
+  return false;
+};
+window.lanternPause=()=>{try{if(PL.classList.contains('on')&&!M.paused)M.pause()}catch{}};
 function tvBack(){
   if(PL.classList.contains('on')){if(P.panel){closePanel();$('#p-set,#p-subs,#p-speed,#p-eps').length;return}if(PL.contains(document.activeElement)&&document.activeElement!==document.body){document.activeElement.blur();return}closePlayer();return}
   if(DLG.classList.contains('on')){closeDialog();return}
@@ -2146,13 +2721,15 @@ if(HOSTED){document.documentElement.classList.add('hosted');try{localStorage.rem
     try{await connect(HOSTED,false);return}catch(e){await fontsReady;show('s-connect');$('#c-err').textContent=`Couldn't reach this server (${e.message}).`;return}
   }
   const saved=LS.get('server');
-  if(saved==='demo'){S.demo=true;B=Demo;startIntro('Lantern',false);return}
+  if(saved==='demo'){S.demo=true;S.kind='demo';B=Demo;startIntro('Lantern',false);return}
+  const last=SOURCES.all().find(x=>x.id===LS.get('source',null));
+  if(last){try{await connectSource(last,false);return}catch{}}
   if(saved){
     $('#c-url').value=saved;
     try{await connect(saved,false);return}catch{}
   }
   await fontsReady;
-  show('s-connect');
+  showConnect();
 })();
 </script>
 </body>

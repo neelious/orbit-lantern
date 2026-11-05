@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV home-screen banner (320x180dp): dark card with the lantern and a red underline. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="315"
+                android:endColor="#000000"
+                android:startColor="#2A0A0C" />
+        </shape>
+    </item>
+    <item
+        android:width="150dp"
+        android:height="150dp"
+        android:gravity="center">
+        <vector
+            android:width="150dp"
+            android:height="150dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <path android:fillColor="#00000000" android:strokeColor="#E50914" android:strokeWidth="3.5" android:pathData="M46,36 Q54,24 62,36" />
+            <path android:fillColor="#E50914" android:pathData="M42,36 L66,36 L62,42 L46,42 Z" />
+            <path android:fillColor="#E50914" android:pathData="M45,44 L63,44 Q68,56 63,68 L45,68 Q40,56 45,44 Z" />
+            <path android:fillColor="#FFD27A" android:pathData="M54,49 Q59,56 54,63 Q49,56 54,49 Z" />
+            <path android:fillColor="#E50914" android:pathData="M44,70 L64,70 L66,75 L42,75 Z" />
+        </vector>
+    </item>
+    <item
+        android:height="4dp"
+        android:gravity="bottom|fill_horizontal">
+        <shape android:shape="rectangle">
+            <solid android:color="#E50914" />
+        </shape>
+    </item>
+</layer-list>

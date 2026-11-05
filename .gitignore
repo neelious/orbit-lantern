@@ -4,3 +4,12 @@ obj/
 .DS_Store
 .claude/
 !dist/*.zip
+
+# Android signing (keep these safe; needed to publish updates)
+android/lantern-release.jks
+android/keystore.properties
+android/.gradle/
+android/app/build/
+android/build/
+android/app/src/main/assets/www/
+android/local.properties
