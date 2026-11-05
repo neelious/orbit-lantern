@@ -23,17 +23,35 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.TextureView;
+import android.widget.FrameLayout;
+
+import androidx.annotation.OptIn;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.MimeTypes;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 
 /**
  * Hosts the bundled web interface and gives it what a web page can't do on its own:
  * rotating to landscape and going truly full screen while a video plays, keeping the
  * screen on, the TV launcher, and the hardware Back button.
  */
+@OptIn(markerClass = UnstableApi.class)
 public class MainActivity extends Activity {
     private static final String APP_URL = "file:///android_asset/www/index.html";
     private static final int REQ_PLAY = 42;
 
     private WebView web;
+    private FrameLayout root;
+    /* small native player drawn over the page's preview box (Live TV guide) */
+    private ExoPlayer preview;
+    private TextureView previewView;
     private boolean tv;
     private boolean playing;
 
@@ -52,7 +70,12 @@ public class MainActivity extends Activity {
     private void createWebView() {
         web = new WebView(this);
         web.setBackgroundColor(Color.BLACK);
-        setContentView(web);
+        if (root == null) {
+            root = new FrameLayout(this);
+            root.setBackgroundColor(Color.BLACK);
+            setContentView(root);
+        }
+        root.addView(web, 0, new FrameLayout.LayoutParams(-1, -1));
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -86,6 +109,7 @@ public class MainActivity extends Activity {
                 if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
                 view.destroy();
                 playing = false;
+                previewStop();
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
                 createWebView();
@@ -93,6 +117,62 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+    }
+
+    private void previewStart(String url, float x, float y, float w, float h) {
+        if (preview == null) {
+            DefaultLoadControl lc = new DefaultLoadControl.Builder().setBufferDurationsMs(2000, 15000, 500, 1000).build();
+            DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
+                    .setUserAgent("Lantern/1.8 (Linux; Android)")
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(8000)
+                    .setReadTimeoutMs(15000);
+            preview = new ExoPlayer.Builder(this)
+                    .setLoadControl(lc)
+                    .setMediaSourceFactory(new DefaultMediaSourceFactory(this).setDataSourceFactory(http))
+                    .build();
+            preview.addListener(new Player.Listener() {
+                @Override
+                public void onPlayerError(PlaybackException error) {
+                    if (web != null) web.evaluateJavascript("window.lanternPreviewState && window.lanternPreviewState('error')", null);
+                }
+
+                @Override
+                public void onPlaybackStateChanged(int state) {
+                    if (state == Player.STATE_READY && web != null)
+                        web.evaluateJavascript("window.lanternPreviewState && window.lanternPreviewState('ready')", null);
+                }
+            });
+            previewView = new TextureView(this);
+            preview.setVideoTextureView(previewView);
+            root.addView(previewView, new FrameLayout.LayoutParams(1, 1));
+        }
+        previewMove(x, y, w, h);
+        MediaItem.Builder b = new MediaItem.Builder().setUri(url);
+        String lower = url.toLowerCase();
+        if (lower.contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8);
+        else if (lower.matches(".*\\.ts(\\?.*)?$")) b.setMimeType(MimeTypes.VIDEO_MP2T);
+        preview.setMediaItem(b.build());
+        preview.prepare();
+        preview.play();
+        previewView.setVisibility(View.VISIBLE);
+    }
+
+    private void previewMove(float x, float y, float w, float h) {
+        if (previewView == null) return;
+        float d = getResources().getDisplayMetrics().density;
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.max(1, Math.round(w * d)), Math.max(1, Math.round(h * d)));
+        lp.leftMargin = Math.round(x * d);
+        lp.topMargin = Math.round(y * d);
+        previewView.setLayoutParams(lp);
+    }
+
+    private void previewStop() {
+        if (preview != null) {
+            preview.stop();
+            preview.clearMediaItems();
+        }
+        if (previewView != null) previewView.setVisibility(View.GONE);
     }
 
     private boolean isTelevision() {
@@ -162,6 +242,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        previewStop();
         web.evaluateJavascript("window.lanternPause && window.lanternPause()", null);
     }
 
@@ -184,6 +265,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (preview != null) {
+            preview.release();
+            preview = null;
+        }
         web.destroy();
         super.onDestroy();
     }
@@ -248,11 +333,28 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void playNative(String spec) {
             runOnUiThread(() -> {
+                previewStop();
                 Intent i = new Intent(MainActivity.this, PlayerActivity.class);
                 i.putExtra(PlayerActivity.EXTRA_SPEC, spec);
                 i.putExtra(PlayerActivity.EXTRA_TV, tv);
                 startActivityForResult(i, REQ_PLAY);
             });
+        }
+
+        /* Live TV preview: x/y/w/h are the preview box in page (CSS) pixels. */
+        @JavascriptInterface
+        public void previewStart(String url, float x, float y, float w, float h) {
+            runOnUiThread(() -> MainActivity.this.previewStart(url, x, y, w, h));
+        }
+
+        @JavascriptInterface
+        public void previewMove(float x, float y, float w, float h) {
+            runOnUiThread(() -> MainActivity.this.previewMove(x, y, w, h));
+        }
+
+        @JavascriptInterface
+        public void previewStop() {
+            runOnUiThread(MainActivity.this::previewStop);
         }
 
         @JavascriptInterface
