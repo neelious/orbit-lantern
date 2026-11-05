@@ -547,6 +547,8 @@ html.hosted [data-act="switch"],html.hosted [data-act2="switch"]{display:none!im
 #c-saved{margin-bottom:14px}
 .c-src{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:10px 12px;border-radius:4px;background:rgba(255,255,255,.06);margin-bottom:8px;cursor:pointer;transition:background .15s}
 .c-src:hover,.c-src:focus{background:rgba(255,255,255,.14);outline:none}
+button.c-src{width:100%;text-align:left;font:inherit;color:inherit}
+html.tv .c-src:focus{box-shadow:0 0 0 2px #fff}
 .c-src.busy{opacity:.6;pointer-events:none}
 .c-src .k{grid-row:1/3;font-size:11px;font-weight:700;padding:4px 7px;border-radius:3px;background:#333;text-transform:uppercase}
 .c-src .k-jellyfin{background:#6c2bb8}.c-src .k-emby{background:#2f8a3c}.c-src .k-plex{background:#c98a00;color:#000}.c-src .k-xtream,.c-src .k-m3u{background:#1f5fa8}
@@ -2311,6 +2313,23 @@ async function plexLink(box){
   }
   throw new Error('The code expired. Try again.');
 }
+/* all of a Plex server's addresses at once; local first, then direct remote, then Plex relay */
+async function plexReach(pick){
+  const seen=new Set(),cands=[];
+  const add=(uri,rank)=>{uri=String(uri||'').replace(/\/+$/,'');if(uri&&!seen.has(uri)){seen.add(uri);cands.push({uri,rank})}};
+  for(const c of pick.connections||[]){
+    const rank=c.relay?3:c.local?0:2;
+    add(c.uri,rank);
+    if(c.local&&c.address&&!c.IPv6)add(`http://${c.address}:${c.port||32400}`,1);
+  }
+  if(!cands.length)return null;
+  const tries=cands.map(c=>getJSON(c.uri+'/identity',{headers:{Accept:'application/json'}},7000).then(()=>c,()=>null));
+  /* wait briefly for a better-ranked answer once anything works */
+  let best=null;const done=new Promise(res=>{let left=tries.length;tries.forEach(t=>t.then(c=>{if(c&&(!best||c.rank<best.rank)){best=c;if(c.rank<=1)res()}if(--left===0)res()}))});
+  await Promise.race([done,new Promise(r=>setTimeout(r,8000))]);
+  if(best&&best.rank>1)await Promise.race([done,sleep(1500)]);
+  return best?.uri||null;
+}
 async function plexAccountFlow(){
   const box=$('#c-plex'),orig=box.innerHTML;$('#c-err').textContent='';
   const restore=()=>{box.innerHTML=orig;box.onclick=null;$('#c-plex-go').onclick=()=>plexAccountFlow()};
@@ -2320,13 +2339,16 @@ async function plexAccountFlow(){
     const r=await ptv('/api/v2/resources',{params:{includeHttps:1,includeRelay:1},token:acct});
     const servers=(Array.isArray(r)?r:[]).filter(x=>String(x.provides||'').includes('server'));
     if(!servers.length)throw new Error('No Plex servers on this account.');
-    box.innerHTML=`<div class="c-saved-h">Choose a server</div>`+servers.map((x,i)=>`<div class="c-src" data-pi="${i}" tabindex="0"><span class="k k-plex">Plex</span><span class="n">${esc(x.name)}</span><span class="u">${x.owned?'Your server':'Shared with you'}</span></div>`).join('');
+    box.innerHTML=`<div class="c-saved-h">Choose a server</div>`+servers.map((x,i)=>`<button type="button" class="c-src" data-pi="${i}"><span class="k k-plex">Plex</span><span class="n">${esc(x.name)}</span><span class="u">${x.owned?'Your server':'Shared with you'}${x.presence===false?' · offline':''}</span></button>`).join('');
+    setTimeout(()=>{if(document.documentElement.classList.contains('tv'))box.querySelector('.c-src')?.focus()},50);
     const pick=await new Promise(res=>box.onclick=e=>{const row=e.target.closest('[data-pi]');if(row)res(servers[+row.dataset.pi])});
-    box.onclick=null;box.innerHTML='<div class="spin" style="margin:20px auto"></div>';
-    const conns=[...(pick.connections||[])].sort((a,b)=>(b.local-a.local)||(a.relay-b.relay));
-    let url=null;
-    for(const c of conns){try{await getJSON(c.uri+'/identity',{headers:{Accept:'application/json'}},4000);url=c.uri;break}catch{}}
-    if(!url)throw new Error(`Couldn't reach ${pick.name} from this device.`);
+    box.onclick=null;box.innerHTML=`<div class="plink"><p>Connecting to <b>${esc(pick.name)}</b>…</p><div class="spin" style="margin:16px auto 0;width:32px;height:32px"></div></div>`;
+    const url=await plexReach(pick);
+    if(!url){
+      const lan=(pick.connections||[]).find(c=>c.local&&c.address&&!c.relay);
+      if(lan){$('#c-url').value=`${lan.address}:${lan.port||32400}`;$$('.c-tabs button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='server'));$$('.c-pane').forEach(p=>p.classList.toggle('on',p.dataset.pane==='server'))}
+      throw new Error(`Couldn't reach ${pick.name} from this device.`+(lan?` Try connecting to its local address (filled in under Media server).`:' Check the server is on and this device is on the same network.'));
+    }
     S.server=normUrl(url);S.plexMachine=pick.clientIdentifier;S.demo=false;
     LS.set(plexAcctKey(),acct);LS.set('plexname|'+S.server,pick.name);
     const me=await Plex.meFromAccount(acct);SESS.remember(me);
@@ -3458,7 +3480,7 @@ function tvScope(){
   if(MD.classList.contains('on'))return{root:MD,sel:'button,select,.epi,.mlc,a[data-q],a[data-about]'};
   const open=$('.dd.open .menu');if(open)return{root:open,sel:'.mi'};
   if($('#s-profiles').classList.contains('on'))return{root:$('#s-profiles'),sel:'.prof,#p-manage,#p-alt,#p-src'};
-  if($('#s-connect').classList.contains('on'))return{root:$('#s-connect'),sel:'input,button'};
+  if($('#s-connect').classList.contains('on'))return{root:$('#s-connect'),sel:'input,button,.c-src'};
   return{root:document,sel:'#n-logo,#n-links a,.browse-dd>span,#srch-b,#srch-i,.acct .av,.hero .bt,#main .acc a,#main .acc select,#main .acc button,#main .grid .card .box,.lg-cat,.lg-ch,.lg-fav',rows:true};
 }
 function tvItems(){const sc=tvScope(),{root,sel}=sc;let els=$$(sel,root);
