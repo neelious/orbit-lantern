@@ -70,6 +70,8 @@ public class MainActivity extends Activity {
     private void createWebView() {
         web = new WebView(this);
         web.setBackgroundColor(Color.BLACK);
+        // The page draws its own focus highlight; Android's default one adds a yellow box on TVs.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) web.setDefaultFocusHighlightEnabled(false);
         if (root == null) {
             root = new FrameLayout(this);
             root.setBackgroundColor(Color.BLACK);

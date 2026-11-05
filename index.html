@@ -650,6 +650,33 @@ html.tv .row{animation:none}
 html.tv .hero .tlogo,html.tv .card .ttl img,html.tv .mhero .inf .tlogo{filter:none}
 html.tv .mbox{transition:none}
 html.tv .track{transition-duration:.35s}
+/* ---------- TV focus: clear Netflix-style highlight instead of the browser's yellow outline ---------- */
+html.tv{-webkit-tap-highlight-color:transparent}
+html.tv *:focus{outline:none!important}
+html.tv button:focus,html.tv [tabindex]:focus,html.tv a:focus{box-shadow:0 0 0 3px #fff}
+html.tv .card .box:focus{transform:scale(1.1);box-shadow:0 0 0 4px #fff,0 12px 30px rgba(0,0,0,.85);z-index:5}
+html.tv .row.top10 .card .box:focus{transform:scale(1.06);box-shadow:none}
+html.tv .row.top10 .card .box:focus .pst{box-shadow:0 0 0 4px #fff}
+html.tv .bt:focus{background:#fff!important;color:#000!important;transform:scale(1.06);box-shadow:none}
+html.tv .bt:focus svg{fill:#000!important}
+html.tv .circ:focus{background:#fff;border-color:#fff;transform:scale(1.12);box-shadow:none}
+html.tv .circ:focus svg{fill:#000}
+html.tv #nav .links a:focus,html.tv .browse-dd>span:focus{color:#000;background:#fff;border-radius:3px;box-shadow:0 0 0 4px #fff;text-decoration:none}
+html.tv .menu .mi:focus{background:#fff;box-shadow:none}html.tv .menu .mi:focus span{color:#000;text-decoration:none}
+html.tv .prof:focus{box-shadow:none}html.tv .prof:focus .av{box-shadow:0 0 0 4px #fff;transform:scale(1.08)}html.tv .prof:focus .nm{color:#fff}
+html.tv .lg-cat:focus{background:#fff;color:#000;box-shadow:none}
+html.tv .lg-ch:focus{background:#fff;box-shadow:none}
+html.tv .lg-ch:focus *{color:#111!important}html.tv .lg-ch:focus .lg-logo{background:#e5e5e5}html.tv .lg-ch:focus .lg-prog{background:#ccc}
+html.tv .lg-fav:focus{background:#fff;color:#000;box-shadow:none}
+html.tv .epi:focus{background:#fff;box-shadow:none}html.tv .epi:focus *{color:#111!important}
+html.tv .c-src:focus{background:#fff;color:#000;box-shadow:none}html.tv .c-src:focus .u{color:#444}
+html.tv .mlc:focus{box-shadow:0 0 0 4px #fff;transform:scale(1.04)}
+html.tv .pp button:focus{background:#fff;color:#000;box-shadow:none}html.tv .pp button:focus svg{fill:#000;visibility:visible}
+html.tv .c-tabs button:focus,html.tv .acc a:focus,html.tv .acc button:focus{background:#fff;color:#000;border-radius:3px}
+html.tv .btn-red:focus,html.tv .btn-ghost:focus,html.tv .btn-outline:focus,html.tv .wbtn:focus,html.tv .obtn:focus{background:#fff!important;color:#000!important;border-color:#fff!important;box-shadow:none}
+html.tv input:focus,html.tv select:focus{box-shadow:0 0 0 3px #fff}
+html.tv .p-alt:focus{color:#000;background:#fff;box-shadow:none;padding:2px 8px;border-radius:3px}
+html.tv #player .cr button:focus,html.tv #player .tp button:focus{box-shadow:none}
 </style>
 </head>
 <body class="fonts-pending">
@@ -992,11 +1019,11 @@ function norm(i){
   const t=i.ImageTags||{},ud=i.UserData||{};
   const bd=i.BackdropImageTags?.length?img(i.Id,'Backdrop',i.BackdropImageTags[0],1920):(i.ParentBackdropImageTags?.length?img(i.ParentBackdropItemId,'Backdrop',i.ParentBackdropImageTags[0],1920):null);
   let thumb=null,hasTitle=false;
-  if(t.Thumb){thumb=img(i.Id,'Thumb',t.Thumb,720);hasTitle=true}
-  else if(i.Type==='Episode'&&t.Primary)thumb=img(i.Id,'Primary',t.Primary,720);
-  else if(i.BackdropImageTags?.length)thumb=img(i.Id,'Backdrop',i.BackdropImageTags[0],720);
-  else if(i.ParentThumbImageTag){thumb=img(i.ParentThumbItemId,'Thumb',i.ParentThumbImageTag,720);hasTitle=true}
-  else if(i.ParentBackdropImageTags?.length)thumb=img(i.ParentBackdropItemId,'Backdrop',i.ParentBackdropImageTags[0],720);
+  if(t.Thumb){thumb=img(i.Id,'Thumb',t.Thumb,480);hasTitle=true}
+  else if(i.Type==='Episode'&&t.Primary)thumb=img(i.Id,'Primary',t.Primary,480);
+  else if(i.BackdropImageTags?.length)thumb=img(i.Id,'Backdrop',i.BackdropImageTags[0],480);
+  else if(i.ParentThumbImageTag){thumb=img(i.ParentThumbItemId,'Thumb',i.ParentThumbImageTag,480);hasTitle=true}
+  else if(i.ParentBackdropImageTags?.length)thumb=img(i.ParentBackdropItemId,'Backdrop',i.ParentBackdropImageTags[0],480);
   const poster=t.Primary&&i.Type!=='Episode'?img(i.Id,'Primary',t.Primary,500):(i.SeriesPrimaryImageTag?img(i.SeriesId,'Primary',i.SeriesPrimaryImageTag,500):(t.Primary?img(i.Id,'Primary',t.Primary,500):null));
   if(!thumb)thumb=poster;
   const logo=t.Logo?img(i.Id,'Logo',t.Logo,800):(i.ParentLogoImageTag?img(i.ParentLogoItemId,'Logo',i.ParentLogoImageTag,800):null);
@@ -1172,8 +1199,8 @@ function pnorm(m){
   const it={id:String(m.ratingKey),name:m.title,type,year:m.year,overview:m.summary||'',genres:(m.Genre||[]).map(g=>g.tag),rating:m.contentRating,score:m.audienceRating||m.rating,
     runtime:dur?Math.round(dur/60000):null,ticks:dur*1e4,posTicks:off*1e4,progress:dur&&off?off/dur*100:(m.viewCount&&!off?100:0),played:!!m.viewCount,
     seriesId:m.grandparentRatingKey?String(m.grandparentRatingKey):undefined,seriesName:m.grandparentTitle,seasonId:m.parentRatingKey?String(m.parentRatingKey):undefined,season:m.parentIndex,episode:m.index,
-    childCount:m.childCount,backdrop:pimg(art,1920,1080),thumb:ep?pimg(m.thumb,720,405):pimg(art||m.thumb,720,405),thumbHasTitle:false,
-    poster:pimg(ep?(m.grandparentThumb||m.parentThumb):m.thumb,500,750),logo:logoImg?praw(logoImg.url):null,
+    childCount:m.childCount,backdrop:pimg(art,1280,720),thumb:ep?pimg(m.thumb,480,270):pimg(art||m.thumb,480,270),thumbHasTitle:false,
+    poster:pimg(ep?(m.grandparentThumb||m.parentThumb):m.thumb,300,450),logo:logoImg?praw(logoImg.url):null,
     studios:m.studio?[m.studio]:[],tagline:m.tagline};
   const people=[...(m.Role||[]).map(p=>({name:p.tag,role:'Actor'})),...(m.Director||[]).map(p=>({name:p.tag,role:'Director'})),...(m.Writer||[]).map(p=>({name:p.tag,role:'Writer'}))];
   if(people.length)it.people=people;
@@ -1266,6 +1293,12 @@ const Plex={
     return all.slice(0,limit).map(pnorm);
   },
   async onDeck(){return mc(await px('/library/onDeck',{'X-Plex-Container-Size':40})).Metadata||[]},
+  /* Plex's own home rows (Continue Watching, Recently Added, ...) in a single request */
+  async homeRows(){
+    const r=mc(await px('/hubs',{count:20,includeLibraryPlaylists:0}));
+    return(r.Hub||[]).map(h=>({title:h.title,prog:/continue|ondeck/i.test(h.hubIdentifier||''),
+      items:(h.Metadata||[]).filter(m=>m.type==='movie'||m.type==='show'||m.type==='episode').map(pnorm)})).filter(h=>h.items.length).slice(0,10);
+  },
   async resume(){return(await this.onDeck()).filter(m=>m.viewOffset>0).slice(0,20).map(pnorm)},
   async nextUp(seriesId){
     if(seriesId){const e=await this.firstToWatch(seriesId);return e?[e]:[]}
@@ -2287,7 +2320,7 @@ $('#c-demo').onclick=()=>{S.demo=true;S.kind='demo';B=Demo;LS.set('server','demo
 $('#c-plex-go').onclick=()=>plexAccountFlow();
 
 async function connectSource(src,gesture){
-  S.demo=false;S.kind=src.kind;S.src=src;S.server=normUrl(src.url);S.api=S.server+(src.kind==='emby'?'/emby':'');S.token='';S.users=[];
+  QC.clear();S.demo=false;S.kind=src.kind;S.src=src;S.server=normUrl(src.url);S.api=S.server+(src.kind==='emby'?'/emby':'');S.token='';S.users=[];
   B=src.kind==='plex'?Plex:src.kind==='xtream'?IPTVX:src.kind==='m3u'?(await STORE.ok()?IPTVM:IPTV):Real;
   Plex._sections=null;Plex._genres={};IPTV.reset();IPTVX.reset();IPTVM.reset();
   const info=await B.info();S.version=info.version;
@@ -2610,7 +2643,7 @@ $('#n-menu').addEventListener('click',async e=>{
   if(a==='switch'){changeSource()}
 });
 /* back to the source list; saved sign-ins stay, so switching back is one tap */
-function changeSource(){closeEverything();LS.del('source');LS.del('server');if(S.demo){B=Real;S.kind=''}S.demo=false;S.users=[];S.user=null;$('#c-url').value='';showConnect()}
+function changeSource(){QC.clear();closeEverything();LS.del('source');LS.del('server');if(S.demo){B=Real;S.kind=''}S.demo=false;S.users=[];S.user=null;$('#c-url').value='';showConnect()}
 
 /* ---------- Live TV ---------- */
 async function renderLive(tok){
@@ -2822,11 +2855,21 @@ function setPer(){const w=innerWidth;const p=w>1400?6:w>1100?5:w>800?4:w>500?3:2
 let rzT;addEventListener('resize',()=>{hidePreview(true);clearTimeout(rzT);rzT=setTimeout(setPer,100)});setPer();
 
 let pageToken=0;
+/* row results are remembered briefly so going back to a page is instant */
+const QC=new Map();
+function cq(o){
+  if(o.fav||o.search)return B.query(o);
+  const k=(S.src?.id||S.server)+'|'+(S.user?.id||'')+'|'+JSON.stringify(o),h=QC.get(k);
+  if(h&&Date.now()-h.t<180000)return h.p;
+  const p=B.query(o).catch(e=>{QC.delete(k);throw e});
+  QC.set(k,{t:Date.now(),p});if(QC.size>80)QC.delete(QC.keys().next().value);
+  return p;
+}
 /* load each row's titles only when it comes near the screen */
 function lazyRowLoader(tok,loadFn){
   /* measure on load and on scroll (works on every TV browser, unlike IntersectionObserver) */
   const pending=new Set();let busy=0,timer=0;
-  const run=async el=>{busy++;try{const items=await loadFn(el);if(tok!==pageToken)return;fillRow(el,items,{})}catch{el.remove()}finally{busy--;schedule()}};
+  const run=async el=>{busy++;try{const items=await loadFn(el);if(tok!==pageToken)return;fillRow(el,items,el.def||{})}catch{el.remove()}finally{busy--;schedule()}};
   const check=()=>{
     timer=0;if(tok!==pageToken){removeEventListener('scroll',schedule);removeEventListener('resize',schedule);return}
     const lim=innerHeight+900;
@@ -2887,31 +2930,38 @@ async function go(page,initial,q){
     rows.push({t:'Next Up',f:()=>B.nextUp()});
   }
   if(page==='new'){
-    rows.push({t:`New on ${S.serverName}`,f:()=>B.query({sort:'DateCreated',limit:24}),newb:true});
-    rows.push({t:'Top 10 Movies Today',f:()=>B.query({types:'Movie',sort:'CommunityRating,SortName',limit:10}),top:true});
-    rows.push({t:'Top 10 TV Shows Today',f:()=>B.query({types:'Series',sort:'CommunityRating,SortName',limit:10}),top:true});
-    rows.push({t:'Recently Released',f:()=>B.query({sort:'PremiereDate',limit:24})});
-    rows.push({t:'Worth the Wait',f:()=>B.query({sort:'Random',limit:24})});
+    rows.push({t:`New on ${S.serverName}`,f:()=>cq({sort:'DateCreated',limit:24}),newb:true});
+    rows.push({t:'Top 10 Movies Today',f:()=>cq({types:'Movie',sort:'CommunityRating,SortName',limit:10}),top:true});
+    rows.push({t:'Top 10 TV Shows Today',f:()=>cq({types:'Series',sort:'CommunityRating,SortName',limit:10}),top:true});
+    rows.push({t:'Recently Released',f:()=>cq({sort:'PremiereDate',limit:24})});
+    rows.push({t:'Worth the Wait',f:()=>cq({sort:'Random',limit:24})});
   }else{
-    rows.push({t:'Trending Now',f:()=>B.query({types,sort:'Random',limit:24})});
-    rows.push({t:`Top 10 ${label||'Titles'} on ${S.serverName} Today`,f:()=>B.query({types,sort:'CommunityRating,SortName',limit:10}),top:true});
-    rows.push({t:`New on ${S.serverName}`,f:()=>B.query({types,sort:'DateCreated',limit:24}),newb:true});
+    rows.push({t:'Trending Now',f:()=>cq({types,sort:'Random',limit:24})});
+    rows.push({t:`Top 10 ${label||'Titles'} on ${S.serverName} Today`,f:()=>cq({types,sort:'CommunityRating,SortName',limit:10}),top:true});
+    rows.push({t:`New on ${S.serverName}`,f:()=>cq({types,sort:'DateCreated',limit:24}),newb:true});
     if(page==='home')rows.push({t:'My List',f:()=>B.query({fav:true,sort:'DateCreated',limit:30})});
     rows.push({genres:true});
-    rows.push({t:'Critically Acclaimed',f:()=>B.query({types,sort:'CommunityRating,SortName',limit:40}).then(a=>shuffle(a.slice(10)).slice(0,20))});
+    rows.push({t:'Critically Acclaimed',f:()=>cq({types,sort:'CommunityRating,SortName',limit:40}).then(a=>shuffle(a.slice(10)).slice(0,20))});
   }
 
+  /* Plex: use the server's own home rows (one request) instead of many separate queries */
+  if(page==='home'&&B.homeRows){
+    const hubs=await B.homeRows().catch(()=>[]);if(tok!==pageToken)return;
+    if(hubs.length){rows.splice(0,rows.length,...hubs.map(h=>h.prog?{t:h.title,f:()=>B.resume(),prog:true,kind:'resume'}:{t:h.title,f:()=>Promise.resolve(h.items)}),{t:'My List',f:()=>B.query({fav:true,sort:'DateCreated',limit:30})},{genres:true})}
+  }
   const hasHero=page!=='new';
   main.innerHTML=(hasHero?`<div class="hero" id="hero"></div>`:'')+`<div class="rows${hasHero?'':' flat'}" id="rows"></div>`;
   const rowsEl=$('#rows');
-  const heroJob=hasHero?B.query({types,sort:'Random',limit:12,imageTypes:'Backdrop'}).then(async a=>{const it=a.find(x=>x.backdrop)||a[0];if(!it)return;await preload(it.backdrop);await preload(it.logo,800);if(tok===pageToken)renderHero(it)}).catch(()=>{}):Promise.resolve();
+  const heroJob=hasHero?cq({types,sort:'Random',limit:12,imageTypes:'Backdrop'}).then(async a=>{const it=a.find(x=>x.backdrop)||a[0];if(!it)return;await preload(it.backdrop);await preload(it.logo,800);if(tok===pageToken)renderHero(it)}).catch(()=>{}):Promise.resolve();
 
-  const jobs=rows.map(r=>{
+  const observe=lazyRowLoader(tok,el=>el.def.f());
+  const jobs=rows.map((r,i)=>{
     if(r.genres){
       const slot=document.createElement('div');rowsEl.appendChild(slot);
-      return B.genres(types).then(gs=>Promise.all(shuffle(gs).slice(0,6).map(g=>{const el=rowShell(g);slot.appendChild(el);return B.query({types,genre:g,limit:24}).then(items=>{if(tok===pageToken)fillRow(el,items,{})}).catch(()=>el.remove())}))).catch(()=>{});
+      return B.genres(types).then(gs=>{for(const g of shuffle(gs).slice(0,6)){const el=rowShell(g);el.def={f:()=>cq({types,genre:g,limit:24})};slot.appendChild(el);observe(el)}}).catch(()=>{});
     }
     const el=rowShell(r.t,r.top,r.kind);el.def=r;rowsEl.appendChild(el);
+    if(i>=4){observe(el);return Promise.resolve()}
     return r.f().then(items=>{if(tok===pageToken)fillRow(el,items,r)}).catch(()=>el.remove());
   });
   await withTimeout(Promise.all([heroJob,...jobs.slice(0,3)]),5000);
