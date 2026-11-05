@@ -1809,7 +1809,11 @@ async function showProfiles(edit){
 function renderProfiles(){
   $('#p-list').innerHTML=S.users.map((u,i)=>`<a class="prof" tabindex="0" data-i="${i}"><div class="av">${avatarHTML(u)}<div class="edit-ov">${I.pencil}</div></div><div class="nm">${esc(u.name)}</div>${u.hasPw&&!u.signedIn?`<div class="lock">${I.lock}</div>`:''}</a>`).join('')+
     `<a class="prof add" tabindex="0" data-i="-1"><div class="av">${I.addP}</div><div class="nm">Add Profile</div></a>`;
-  if(!$('#p-alt')){const a=document.createElement('div');a.id='p-alt';a.className='p-alt';a.textContent='Sign in with a different account';a.onclick=()=>dlgSignIn();$('#p-manage').after(a)}
+  if(!$('#p-alt')){const a=document.createElement('div');a.id='p-alt';a.className='p-alt';a.tabIndex=0;a.textContent='Sign in with a different account';a.onclick=()=>dlgSignIn();$('#p-manage').after(a)}
+  if(!$('#p-src')){const a=document.createElement('div');a.id='p-src';a.className='p-alt';a.tabIndex=0;a.textContent='Change source';a.onclick=()=>changeSource();$('#p-alt').after(a)}
+  const hosted=typeof HOSTED!=='undefined'&&HOSTED;
+  $('#p-alt').hidden=!!(S.demo||B.me);$('#p-src').hidden=!!hosted;
+  $('#p-src').textContent=S.demo?'Leave the demo':'Change source';
 }
 function setEditing(on){
   editing=on;$('#p-list').classList.toggle('editing',on);
@@ -1968,7 +1972,7 @@ $('#n-menu').addEventListener('click',async e=>{
   if(a==='switch'){changeSource()}
 });
 /* back to the source list; saved sign-ins stay, so switching back is one tap */
-function changeSource(){closeEverything();LS.del('source');LS.del('server');S.demo=false;S.users=[];S.user=null;$('#c-url').value='';showConnect()}
+function changeSource(){closeEverything();LS.del('source');LS.del('server');if(S.demo){B=Real;S.kind=''}S.demo=false;S.users=[];S.user=null;$('#c-url').value='';showConnect()}
 
 /* ---------- Live TV ---------- */
 async function renderLive(tok){
@@ -2624,7 +2628,7 @@ function tvScope(){
   if(DLG.classList.contains('on'))return{root:DLG,sel:'input,button,select'};
   if(MD.classList.contains('on'))return{root:MD,sel:'button,select,.epi,.mlc,a[data-q],a[data-about]'};
   const open=$('.dd.open .menu');if(open)return{root:open,sel:'.mi'};
-  if($('#s-profiles').classList.contains('on'))return{root:$('#s-profiles'),sel:'.prof,#p-manage,#p-alt'};
+  if($('#s-profiles').classList.contains('on'))return{root:$('#s-profiles'),sel:'.prof,#p-manage,#p-alt,#p-src'};
   if($('#s-connect').classList.contains('on'))return{root:$('#s-connect'),sel:'input,button'};
   return{root:document,sel:'#n-logo,#n-links a,.browse-dd>span,#srch-b,#srch-i,.acct .av,.hero .bt,#main .card .box[data-id],#main .acc a,#main .acc select,#main .acc button,#main .grid .card .box'};
 }
@@ -2670,7 +2674,7 @@ window.lanternBack=()=>{
   if($('.dd.open')){closeMenus();return true}
   if(MD.classList.contains('on')){closeModal();return true}
   if($('#s-browse').classList.contains('on')&&(S.page!=='home'||scrollY>40)){if(S.page!=='home')go('home');else scrollTo({top:0,behavior:'smooth'});return true}
-  if($('#s-connect').classList.contains('on')&&SOURCES.all().length&&LS.get('source',null)===null&&S.src){connectSource(S.src,false);return true}
+  if($('#s-profiles').classList.contains('on')&&!(typeof HOSTED!=='undefined'&&HOSTED)){if(editing)setEditing(false);else changeSource();return true}
   return false;
 };
 window.lanternPause=()=>{try{if(PL.classList.contains('on')&&!M.paused)M.pause()}catch{}};
@@ -2679,6 +2683,7 @@ function tvBack(){
   if(DLG.classList.contains('on')){closeDialog();return}
   if($('.dd.open')){closeMenus();return}
   if(MD.classList.contains('on')){closeModal();return}
+  if($('#s-profiles').classList.contains('on')&&!(typeof HOSTED!=='undefined'&&HOSTED)){if(editing)setEditing(false);else changeSource();return}
   if($('#s-browse').classList.contains('on')){if(S.page!=='home'||scrollY>0){if(S.page!=='home')go('home');else{scrollTo({top:0,behavior:'smooth'});tvFocus($('.hero .bt.play'))}}return}
 }
 addEventListener('keydown',e=>{
