@@ -193,6 +193,45 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> MainActivity.this.openExternal(url));
         }
 
+        /* Key-value files in the app's private storage, used to keep big playlists out of memory. */
+        private java.io.File storeFile(String key) {
+            java.io.File dir = new java.io.File(getFilesDir(), "store");
+            if (!dir.exists()) dir.mkdirs();
+            return new java.io.File(dir, key.replaceAll("[^A-Za-z0-9._-]", "_"));
+        }
+
+        @JavascriptInterface
+        public boolean putData(String key, String value) {
+            try (java.io.Writer w = new java.io.OutputStreamWriter(new java.io.FileOutputStream(storeFile(key)), java.nio.charset.StandardCharsets.UTF_8)) {
+                w.write(value);
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public String getData(String key) {
+            java.io.File f = storeFile(key);
+            if (!f.exists()) return null;
+            try (java.io.InputStream in = new java.io.FileInputStream(f)) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream((int) f.length());
+                byte[] buf = new byte[65536];
+                for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                return new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        @JavascriptInterface
+        public void deleteData(String prefix) {
+            String p = prefix.replaceAll("[^A-Za-z0-9._-]", "_");
+            java.io.File[] files = new java.io.File(getFilesDir(), "store").listFiles();
+            if (files == null) return;
+            for (java.io.File f : files) if (f.getName().startsWith(p)) f.delete();
+        }
+
         @JavascriptInterface
         public String version() {
             try {
