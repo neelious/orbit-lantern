@@ -1284,7 +1284,8 @@ async function readStream(url,onText,onBytes,ms=900000){
     const rd=r.body.getReader(),dec=new TextDecoder();let n=0,last=0;
     for(;;){
       const{done,value}=await rd.read();if(done)break;
-      n+=value.length;onText(dec.decode(value,{stream:true}));
+      n+=value.length;
+      if(onText(dec.decode(value,{stream:true}))===false){try{rd.cancel()}catch{}onBytes&&onBytes(n);return}
       if(n-last>131072){last=n;onBytes&&onBytes(n);await new Promise(r=>setTimeout(r))}
     }
     onText(dec.decode());onBytes&&onBytes(n);
@@ -1293,9 +1294,9 @@ async function readStream(url,onText,onBytes,ms=900000){
 }
 /* Stream a JSON list ([{...},{...}] or {"k":{...},...}) and call onItem for each entry as it arrives. */
 async function streamJSONItems(url,onItem,onBytes){
-  let buf='',depth=0,inStr=false,esc=false,start=-1,err=null;
+  let buf='',depth=0,inStr=false,esc=false,start=-1,err=null,stop=false;
   await readStream(url,chunk=>{
-    if(err)return;
+    if(err||stop)return false;
     let i=buf.length;buf+=chunk;
     for(;i<buf.length;i++){
       const c=buf.charCodeAt(i);
@@ -1303,7 +1304,7 @@ async function streamJSONItems(url,onItem,onBytes){
       if(c===34){inStr=true;continue}
       if(c===123||c===91){depth++;if(depth===2&&c===123)start=i;continue}
       if(c===125||c===93){
-        if(depth===2&&c===125&&start>=0){try{onItem(JSON.parse(buf.slice(start,i+1)))}catch(e){if(e instanceof Error&&!(e instanceof SyntaxError)){err=e;return}}start=-1}
+        if(depth===2&&c===125&&start>=0){let r;try{r=onItem(JSON.parse(buf.slice(start,i+1)))}catch(e){if(e instanceof Error&&!(e instanceof SyntaxError)){err=e;return false}}start=-1;if(r===false){stop=true;return false}}
         depth--;
       }
     }
@@ -1593,6 +1594,209 @@ const IPTV={
 };
 
 /* =====================================================================
+   Xtream, on demand: only the category lists are fetched up front; each
+   category's titles load when its row comes into view, and only a limited
+   number stay in memory. Works with libraries of any size.
+   ===================================================================== */
+const IPTVX={
+  cats:null,cache:new Map(),pinned:new Set(),_series:{},MAX:6000,PER_CAT:120,lazyCats:true,
+  reset(){this.cats=null;this.cache=new Map();this.pinned=new Set();this._series={}},
+  get xt(){return true},
+  xapi(...a){return IPTV.xapi.apply(this,a)},
+  key(k){return IPTV.key.call(this,k)},
+  prog(){return LS.get(this.key('prog'),{})},
+  favs(){return LS.get(this.key('favx'),[])},
+  async info(){
+    const r=await this.xapi();
+    if(!r||!r.user_info||String(r.user_info.auth)!=='1')throw new Error('wrong username or password');
+    if(r.user_info.status&&!/active/i.test(r.user_info.status))throw new Error('account is '+String(r.user_info.status).toLowerCase());
+    return{name:S.src.name||'IPTV',version:'Xtream'};
+  },
+  async users(){return[]},
+  me(){return{id:'iptv',name:S.src?.user||'Me',token:'iptv'}},
+  async login(){return this.me()},
+  async resumeSession(rec){return{...rec}},
+  async logout(){},
+  newPage(){this.pinned=new Set()},
+  async loadCats(progress=()=>{}){
+    if(this.cats)return this.cats;
+    const get=async(action,key)=>{progress(key,{state:'run'});const r=await this.xapi(action).catch(()=>[]);
+      const arr=(Array.isArray(r)?r:Object.values(r||{})).map(c=>({id:String(c.category_id),name:String(c.category_name||'').trim()||'Other'}));
+      progress(key,{state:'done',count:arr.length});return arr};
+    const live=await get('get_live_categories','lcat'),vod=await get('get_vod_categories','vcat'),series=await get('get_series_categories','scat');
+    return this.cats={live,vod,series};
+  },
+  /* ---- items ---- */
+  applyOne(it){const v=this.prog()[it.id];if(v){it.posTicks=v.pos*1e7;it.ticks=(v.dur||0)*1e7;it.progress=v.dur?v.pos/v.dur*100:0;it.runtime=it.runtime||Math.round((v.dur||0)/60)||null}it.fav=this.favs().some(f=>f.id===it.id);return it},
+  reg(it){const prev=ITEMS.get(it.id);if(prev&&prev._full){Object.assign(prev,{...it,overview:prev.overview||it.overview,people:prev.people});return prev}ITEMS.set(it.id,it);return this.applyOne(it)},
+  mkLive(x,g){return{id:'xl'+x.stream_id,sid:x.stream_id,type:'Live',name:String(x.name||''),num:x.num,logo:x.stream_icon||null,thumb:null,group:g,genres:[g],catId:String(x.category_id),epg:x.epg_channel_id||''}},
+  mkMovie(x,g){const n=String(x.name||'');return{id:'xv'+x.stream_id,sid:x.stream_id,type:'Movie',name:n,year:+(n.match(/\((\d{4})\)/)||[])[1]||undefined,score:parseFloat(x.rating)||undefined,
+    group:g,genres:[g],catId:String(x.category_id),poster:x.stream_icon||null,thumb:x.stream_icon||null,backdrop:x.stream_icon||null,logo:null,ext:x.container_extension||'mp4',created:(+x.added||0)*1000,overview:''}},
+  mkSeries(x,g){const bd=(Array.isArray(x.backdrop_path)?x.backdrop_path[0]:x.backdrop_path)||null;
+    return{id:'xs'+x.series_id,sid:x.series_id,type:'Series',name:String(x.name||''),year:+String(x.releaseDate||x.release_date||'').slice(0,4)||undefined,score:parseFloat(x.rating)||undefined,
+    group:g,genres:[g,...String(x.genre||'').split(/[,/]/).map(t=>t.trim()).filter(Boolean)].slice(0,3),catId:String(x.category_id),poster:x.cover||null,thumb:bd||x.cover||null,backdrop:bd||x.cover||null,logo:null,
+    overview:String(x.plot||'').slice(0,400),created:(+x.last_modified||0)*1000}},
+  /* a small, self-contained copy of an item for My List / Continue Watching */
+  snap(it){const o={};for(const k of['id','sid','type','name','year','score','group','catId','poster','thumb','backdrop','logo','ext','num','eid','seriesId','seriesName','season','episode','seasonId'])if(it[k]!=null)o[k]=it[k];o.genres=it.genres||[it.group];return o},
+  fromSnap(s){const it=ITEMS.get(s.id);if(it)return it;const n={...s,overview:'',logo:s.logo||null};ITEMS.set(n.id,n);return this.applyOne(n)},
+  async catItems(kind,catId){
+    const key=kind+':'+catId;this.pinned.add(key);
+    const hit=this.cache.get(key);if(hit){this.cache.delete(key);this.cache.set(key,hit);return hit}
+    const cats=await this.loadCats(),c=(cats[kind]||[]).find(x=>x.id===catId),g=c?.name||'Other';
+    const action={live:'get_live_streams',vod:'get_vod_streams',series:'get_series'}[kind];
+    const mk={live:'mkLive',vod:'mkMovie',series:'mkSeries'}[kind];
+    const items=[];
+    /* a row shows 60; keep at most PER_CAT per category and stop downloading there */
+    await streamJSONItems(`${S.server}/player_api.php?${new URLSearchParams({username:S.src.user,password:S.src.pass||'',action,category_id:catId})}`,x=>{items.push(this.reg(this[mk](x,g)));if(items.length>=this.PER_CAT)return false});
+    this.cache.set(key,items);this.evict();
+    return items;
+  },
+  evict(){
+    let total=0;for(const v of this.cache.values())total+=v.length;
+    for(const[k,v]of this.cache){
+      if(total<=this.MAX)break;
+      if(this.pinned.has(k))continue;
+      this.cache.delete(k);total-=v.length;
+      const keep=new Set([...this.favs().map(f=>f.id),...Object.keys(this.prog())]);
+      for(const it of v)if(!keep.has(it.id))ITEMS.delete(it.id);
+    }
+  },
+  kinds(types){const t=(types||'Movie,Series').split(',');return[...(t.includes('Movie')?['vod']:[]),...(t.includes('Series')?['series']:[])]},
+  /* rows for a page: every category, movies and series interleaved */
+  async lazyRows(page){
+    const c=await this.loadCats();
+    const v=c.vod.map(x=>({kind:'vod',...x})),s=c.series.map(x=>({kind:'series',...x}));
+    if(page==='movies')return v;if(page==='tv')return s;
+    const out=[];for(let i=0;i<Math.max(v.length,s.length);i++){if(v[i])out.push(v[i]);if(s[i])out.push(s[i])}
+    return page==='new'?out.slice(0,8):out;
+  },
+  async query(o={}){
+    const limit=o.limit||24;
+    if(o.search)return this.search(o.search,limit);
+    if(o.fav)return this.favs().map(f=>this.fromSnap(f)).slice(0,limit);
+    const cats=await this.loadCats(),kinds=this.kinds(o.types);
+    let pick=[];
+    if(o.genre){for(const k of kinds){const c=cats[k].find(x=>x.name===o.genre);if(c)pick.push([k,c.id])}}
+    else{const all=kinds.flatMap(k=>cats[k].map(c=>[k,c.id]));pick=(o.sort==='Random'||!o.sort?shuffle(all):all).slice(0,2)}
+    let a=(await Promise.all(pick.map(([k,id])=>this.catItems(k,id).catch(()=>[])))).flat();
+    if(o.imageTypes)a=a.filter(i=>i.backdrop);
+    const s=o.sort||'Random';
+    a=s==='Random'?shuffle(a):[...a].sort((x,y)=>s.startsWith('CommunityRating')?(y.score||0)-(x.score||0):s==='PremiereDate'?(y.year||0)-(x.year||0):s==='SortName'?x.name.localeCompare(y.name):(y.created||0)-(x.created||0));
+    return a.slice(0,limit);
+  },
+  /* search streams through the provider's lists and keeps only matches */
+  async search(q,limit=60){
+    const cats=await this.loadCats(),needle=q.toLowerCase(),out=[];
+    const name=(list,id)=>(list.find(c=>c.id===String(id))||{}).name||'';
+    const run=(action,mk,list)=>streamJSONItems(`${S.server}/player_api.php?${new URLSearchParams({username:S.src.user,password:S.src.pass||'',action})}`,x=>{
+      if(String(x.name||'').toLowerCase().includes(needle)){out.push(this.reg(this[mk](x,name(list,x.category_id))));if(out.length>=limit)return false}});
+    await run('get_vod_streams','mkMovie',cats.vod);
+    if(out.length<limit)await run('get_series','mkSeries',cats.series);
+    if(out.length<limit)await run('get_live_streams','mkLive',cats.live);
+    return out;
+  },
+  async resume(){
+    const p=this.prog();
+    return Object.entries(p).filter(([,v])=>v.dur&&v.snap&&v.pos/v.dur>.02&&v.pos/v.dur<.95).sort((a,b)=>b[1].t-a[1].t).slice(0,20).map(([,v])=>this.fromSnap(v.snap));
+  },
+  async nextUp(){return[]},
+  async genres(types){const c=await this.loadCats();return this.kinds(types).flatMap(k=>c[k].map(x=>x.name)).slice(0,40)},
+  async detail(id){
+    const it=ITEMS.get(id);if(!it)return null;
+    if(it.type==='Movie'&&!it._full){
+      try{const r=await this.xapi('get_vod_info',{vod_id:it.sid}),i=r?.info||{};
+        Object.assign(it,{_full:1,overview:i.plot||i.description||it.overview,year:+String(i.releasedate||'').slice(0,4)||it.year,runtime:i.duration_secs?Math.round(i.duration_secs/60):it.runtime,
+          backdrop:(Array.isArray(i.backdrop_path)?i.backdrop_path[0]:i.backdrop_path)||it.backdrop,score:parseFloat(i.rating)||it.score,
+          genres:i.genre?String(i.genre).split(/[,/]/).map(t=>t.trim()).filter(Boolean):it.genres,
+          people:[...String(i.cast||i.actors||'').split(',').map(n=>n.trim()).filter(Boolean).slice(0,10).map(n=>({name:n,role:'Actor'})),...String(i.director||'').split(',').map(n=>n.trim()).filter(Boolean).map(n=>({name:n,role:'Director'}))],
+          ext:r?.movie_data?.container_extension||it.ext})}catch{}
+    }
+    if(it.type==='Series')await this.seriesInfo(it).catch(()=>{});
+    return it;
+  },
+  async seriesInfo(it){
+    if(this._series[it.id])return this._series[it.id];
+    const r=await this.xapi('get_series_info',{series_id:it.sid}),info=r?.info||{},eps=[];
+    for(const[sn,list]of Object.entries(r?.episodes||{}))for(const e of list||[]){
+      const ep={id:'xe'+e.id,eid:e.id,type:'Episode',name:e.title||`Episode ${e.episode_num}`,seriesId:it.id,seriesName:it.name,season:+e.season||+sn,episode:+e.episode_num,seasonId:it.id+':'+(+e.season||+sn),
+        overview:e.info?.plot||'',runtime:e.info?.duration_secs?Math.round(e.info.duration_secs/60):null,thumb:e.info?.movie_image||it.thumb,backdrop:it.backdrop,poster:it.poster,ext:e.container_extension||'mp4',genres:it.genres};
+      ITEMS.set(ep.id,this.applyOne(ep));eps.push(ep);
+    }
+    eps.sort((a,b)=>a.season-b.season||a.episode-b.episode);
+    Object.assign(it,{_full:1,eps,overview:info.plot||it.overview,childCount:new Set(eps.map(e=>e.season)).size,
+      people:String(info.cast||'').split(',').map(n=>n.trim()).filter(Boolean).slice(0,10).map(n=>({name:n,role:'Actor'}))});
+    const keys=Object.keys(this._series);if(keys.length>30)delete this._series[keys[0]];
+    return this._series[it.id]=it;
+  },
+  async similar(id){const it=ITEMS.get(id);if(!it||!it.catId)return[];const items=await this.catItems(it.type==='Series'?'series':'vod',it.catId).catch(()=>[]);return shuffle(items.filter(x=>x.id!==id)).slice(0,9)},
+  async seasons(id){const it=await this.seriesInfo(ITEMS.get(id));return[...new Set(it.eps.map(e=>e.season))].map(n=>({id:id+':'+n,name:`Season ${n}`}))},
+  async episodes(id,seasonId){const it=await this.seriesInfo(ITEMS.get(id));return it.eps.filter(e=>e.seasonId===seasonId)},
+  async setFav(id,on){const it=ITEMS.get(id);let f=this.favs().filter(x=>x.id!==id);if(on&&it)f.unshift(this.snap(it));LS.set(this.key('favx'),f.slice(0,500));if(it)it.fav=on},
+  async playTarget(it){
+    if(it.type!=='Series')return it;
+    const s=await this.seriesInfo(it),p=this.prog();
+    return s.eps.find(e=>p[e.id]&&p[e.id].pos/(p[e.id].dur||1)<.95)||s.eps.find(e=>!p[e.id])||s.eps[0]||null;
+  },
+  async nextEpisode(it){
+    if(it.type!=='Episode')return null;
+    const show=ITEMS.get(it.seriesId);if(!show)return null;
+    const s=await this.seriesInfo(show);const i=s.eps.findIndex(e=>e.id===it.id);return i>=0?s.eps[i+1]||null:null;
+  },
+  url(it){return IPTV.url.call(this,it)},
+  stream(it,o){return IPTV.stream.call(this,it,o)},
+  async subtitles(){return[]},
+  report(kind,src,pos){
+    if(src.live||!pos)return;
+    const p=this.prog(),dur=M.duration&&isFinite(M.duration)?M.duration:(src.item.runtime||0)*60;
+    const it=src.item,show=it.seriesId&&ITEMS.get(it.seriesId);
+    p[it.id]={pos,dur,t:Date.now(),snap:this.snap(it.type==='Episode'&&show?{...it,poster:show.poster}:it)};
+    const keys=Object.keys(p);if(keys.length>300)for(const k of keys.sort((a,b)=>p[a].t-p[b].t).slice(0,keys.length-300))delete p[k];
+    LS.set(this.key('prog'),p);this.applyOne(it);
+  },
+  /* Live TV: one lazy row per category */
+  live:true,
+  async liveRows(){const c=await this.loadCats();return c.live.map(x=>({kind:'live',...x}))},
+  nowPlaying(ch){return IPTV.nowPlaying.call(this,ch)},
+  /* totals, counted in the background without keeping the titles */
+  counts(){const c=LS.get(this.key('counts'),null);return c&&Date.now()-c.t<24*3600e3?c:null},
+  async count(onUpdate=()=>{}){
+    if(this._counting)return this._counting;
+    return this._counting=(async()=>{
+      const c={live:0,movies:0,series:0,t:0};
+      const run=(action,k)=>streamJSONItems(`${S.server}/player_api.php?${new URLSearchParams({username:S.src.user,password:S.src.pass||'',action})}`,()=>{c[k]++;if(c[k]%2000===0)onUpdate(c)});
+      await run('get_vod_streams','movies');onUpdate(c);
+      await run('get_series','series');onUpdate(c);
+      await run('get_live_streams','live');
+      c.t=Date.now();LS.set(this.key('counts'),c);onUpdate(c);return c;
+    })().finally(()=>{this._counting=null});
+  },
+  libSummary(){
+    const c=this.counts(),cats=this.cats;
+    const catLine=cats?`${cats.vod.length.toLocaleString()} movie categories · ${cats.series.length.toLocaleString()} series categories · ${cats.live.length.toLocaleString()} live categories`:'';
+    return{line:c?`${c.movies.toLocaleString()} movies · ${c.series.toLocaleString()} series · ${c.live.toLocaleString()} live channels`:'Counting titles…',sub:catLine,updated:c?.t};
+  },
+  /* connect screen: sign in and fetch the category lists, with progress */
+  async loadWithUI(){
+    if(this.cats)return this.cats;
+    const steps=[['lcat','Live TV categories'],['vcat','Movie categories'],['scat','Series categories']];
+    const ov=$('#libload');$('#ll-logo').innerHTML=logoHTML(S.src?.name||'IPTV');
+    $('#ll-title').textContent='Opening your IPTV';$('#ll-err').textContent='';$('#ll-sum').textContent='';
+    $('#ll-steps').innerHTML=steps.map(([k,l])=>`<li data-k="${k}"><span class="st"></span><span class="l">${l}</span><span class="v"></span></li>`).join('');
+    $('#ll-bar i').style.width='0';ov.classList.add('on');let n=0;
+    try{
+      const c=await this.loadCats((k,i)=>{const li=$(`#ll-steps li[data-k="${k}"]`);if(!li)return;li.className=i.state;if(i.state==='done'){$('.v',li).textContent=Number(i.count).toLocaleString();n++;$('#ll-bar i').style.width=(n/steps.length*100)+'%'}});
+      const known=this.counts();
+      $('#ll-title').textContent='Ready';
+      $('#ll-sum').textContent=known?`${known.movies.toLocaleString()} movies · ${known.series.toLocaleString()} series · ${known.live.toLocaleString()} live channels`:`${(c.vod.length+c.series.length+c.live.length).toLocaleString()} categories. Titles load as you browse.`;
+      await sleep(1200);return c;
+    }catch(e){$('#ll-title').textContent="Couldn't open your IPTV";$('#ll-err').textContent=e.message||String(e);await new Promise(r=>{$('#ll-close').onclick=r});throw e}
+    finally{ov.classList.remove('on')}
+  },
+  dashboard(){return null},
+  prepare(){return Promise.resolve()}
+};
+
+/* =====================================================================
    Demo backend (no server needed; artwork and films are generated)
    ===================================================================== */
 const Demo=(()=>{
@@ -1839,11 +2043,11 @@ $('#c-plex-go').onclick=()=>plexAccountFlow();
 
 async function connectSource(src,gesture){
   S.demo=false;S.kind=src.kind;S.src=src;S.server=normUrl(src.url);S.api=S.server+(src.kind==='emby'?'/emby':'');S.token='';S.users=[];
-  B=src.kind==='plex'?Plex:(src.kind==='xtream'||src.kind==='m3u')?IPTV:Real;
-  Plex._sections=null;Plex._genres={};IPTV.reset();
+  B=src.kind==='plex'?Plex:src.kind==='xtream'?IPTVX:src.kind==='m3u'?IPTV:Real;
+  Plex._sections=null;Plex._genres={};IPTV.reset();IPTVX.reset();
   const info=await B.info();S.version=info.version;
   if(info.name&&!src.name)src.name=info.name;
-  if(B===IPTV){LS.set('loading-src',src.id);await IPTV.loadWithUI();LS.del('loading-src')}
+  if(B.loadWithUI){LS.set('loading-src',src.id);await B.loadWithUI();LS.del('loading-src')}
   SOURCES.save(src);LS.set('server',S.server);LS.set('source',src.id);
   document.documentElement.classList.toggle('has-live',!!B.live);
   startIntro(src.name||info.name||KIND_NAME[src.kind],gesture);
@@ -2145,6 +2349,18 @@ function changeSource(){closeEverything();LS.del('source');LS.del('server');if(S
 /* ---------- Live TV ---------- */
 async function renderLive(tok){
   const main=$('#main');main.innerHTML=`<div class="rows flat" id="rows"><div class="spin" style="margin:60px auto"></div></div>`;
+  if(B.liveRows){
+    let cats=[];try{cats=await B.liveRows()}catch{}if(tok!==pageToken)return;
+    const rows=$('#rows');rows.innerHTML=cats.length?'':'<p class="empty">This source has no live channels.</p>';
+    let epg=0;
+    const observe=lazyRowLoader(tok,async el=>{
+      const chs=await B.catItems('live',el.cat.id);
+      if(B.nowPlaying&&epg<6){epg++;for(const ch of chs.slice(0,8))B.nowPlaying(ch).then(n=>{if(!n)return;ch.now=n;$$(`.box[data-id="${ch.id}"] .lnow`).forEach(e=>e.textContent=n.title)})}
+      return chs.slice(0,80);
+    });
+    for(const c of cats.slice(0,200)){const el=rowShell(c.name,false,'live');el.cat=c;rows.appendChild(el);observe(el)}
+    return;
+  }
   const groups=B.live?await B.live().catch(()=>[]):[];if(tok!==pageToken)return;
   const rows=$('#rows');rows.innerHTML=groups.length?'':'<p class="empty">This source has no live channels.</p>';
   for(const g of groups.slice(0,40)){const el=rowShell(`${g.name} · ${g.channels.length.toLocaleString()}`,false,'live');rows.appendChild(el);fillRow(el,g.channels.slice(0,60),{})}
@@ -2166,6 +2382,11 @@ function renderAccount(){
       <div class="line"><b>${esc(S.serverName)}</b><span class="mut">${S.demo?'Demo mode':esc((KIND_NAME[S.kind]||'Jellyfin')+' '+(S.version||''))}</span></div>
       <div class="line"><span class="mut">${S.demo?'Sample library':esc(S.server)}</span><a class="lk" data-act2="switch">Change source</a></div>
     </div></div>
+    ${B.libSummary?(()=>{const L=B.libSummary();return `<div class="grp"><h3>Library</h3><div>
+      <div class="line"><span id="lib-line">${esc(L.line)}</span></div>
+      <div class="line"><span class="mut">${esc(L.sub)}</span></div>
+      <div class="line"><span class="mut">${L.updated?'Counted '+new Date(L.updated).toLocaleString():'Titles load as you browse'}</span><a class="lk" data-act2="refresh">Refresh library</a></div>
+    </div></div>`})():''}
     ${B===IPTV&&IPTV.data?`<div class="grp"><h3>Library</h3><div>
       <div class="line"><span>${IPTV.data.counts.movies.toLocaleString()} movies · ${IPTV.data.counts.series.toLocaleString()} series · ${IPTV.data.counts.live.toLocaleString()} live channels</span></div>
       <div class="line"><span class="mut">Updated ${IPTV.data.t?new Date(IPTV.data.t).toLocaleString():'just now'}</span><a class="lk" data-act2="refresh">Refresh library</a></div>
@@ -2198,7 +2419,15 @@ function wireAccount(){
     if(k==='profiles')showProfiles(true);
     if(k==='out'){await B.logout();SESS.forget(S.user.id);S.user=null;showProfiles()}
     if(k==='switch')changeSource();
-    if(k==='refresh'){IPTV.force=true;IPTV.data=null;try{await IPTV.loadWithUI();go('home')}catch{}}});
+    if(k==='refresh'){
+      if(B===IPTVX){IPTVX.reset();LS.del(IPTVX.key('counts'));try{await IPTVX.loadWithUI();go('account')}catch{}return}
+      IPTV.force=true;IPTV.data=null;try{await IPTV.loadWithUI();go('home')}catch{}
+    }});
+  /* count titles in the background the first time the Account page is opened */
+  if(B===IPTVX&&!IPTVX.counts()){
+    const show=c=>{const el=$('#lib-line');if(el)el.textContent=`Counting… ${c.movies.toLocaleString()} movies · ${c.series.toLocaleString()} series · ${c.live.toLocaleString()} live channels`};
+    IPTVX.count(show).then(()=>{if(S.page==='account')go('account')}).catch(()=>{const el=$('#lib-line');if(el)el.textContent="Couldn't count the library."});
+  }
 }
 /* tap-to-open menus on touch screens */
 function closeMenus(){$$('.dd.open').forEach(d=>d.classList.remove('open'))}
@@ -2219,8 +2448,41 @@ function setPer(){const w=innerWidth;const p=w>1400?6:w>1100?5:w>800?4:w>500?3:2
 let rzT;addEventListener('resize',()=>{hidePreview(true);clearTimeout(rzT);rzT=setTimeout(setPer,100)});setPer();
 
 let pageToken=0;
+/* load each row's titles only when it comes near the screen */
+function lazyRowLoader(tok,loadFn){
+  /* measure on load and on scroll (works on every TV browser, unlike IntersectionObserver) */
+  const pending=new Set();let busy=0,timer=0;
+  const run=async el=>{busy++;try{const items=await loadFn(el);if(tok!==pageToken)return;fillRow(el,items,{})}catch{el.remove()}finally{busy--;schedule()}};
+  const check=()=>{
+    timer=0;if(tok!==pageToken){removeEventListener('scroll',schedule);removeEventListener('resize',schedule);return}
+    const lim=innerHeight+900;
+    for(const el of pending){if(busy>=3)break;if(!el.isConnected){pending.delete(el);continue}
+      if(el.getBoundingClientRect().top<lim){pending.delete(el);run(el)}}
+  };
+  const schedule=()=>{if(!timer)timer=setTimeout(check,120)};
+  addEventListener('scroll',schedule,{passive:true});addEventListener('resize',schedule);
+  return el=>{pending.add(el);schedule()};
+}
+async function renderLazy(page,tok){
+  const main=$('#main');
+  main.innerHTML=`${page==='new'?'':'<div class="hero" id="hero"></div>'}<div class="rows${page==='new'?' flat':''}" id="rows"></div>`;
+  const rows=$('#rows');let heroDone=page==='new';
+  if(page==='home'){
+    const fixed=[[`Continue Watching for ${S.user.name}`,()=>B.resume(),{prog:true,kind:'resume'}],['My List',()=>B.query({fav:true,limit:40}),{}]];
+    for(const[t,f,opt]of fixed){const el=rowShell(t,false,opt.kind);el.def={...opt,f};rows.appendChild(el);f().then(items=>{if(tok===pageToken)fillRow(el,items,opt)}).catch(()=>el.remove())}
+  }
+  let cats=[];try{cats=await B.lazyRows(page)}catch{}
+  if(tok!==pageToken)return;
+  if(!cats.length&&page!=='home'){rows.innerHTML='<p class="empty">Nothing here yet.</p>';return}
+  const observe=lazyRowLoader(tok,async el=>{
+    const items=await B.catItems(el.cat.kind,el.cat.id);
+    if(!heroDone){const h=items.filter(i=>i.backdrop);if(h.length){heroDone=true;const it=h[Math.floor(Math.random()*h.length)];preload(it.backdrop).then(()=>{if(tok===pageToken)renderHero(it)})}}
+    return items.slice(0,60);
+  });
+  for(const c of cats.slice(0,150)){const el=rowShell(page==='home'&&c.kind==='series'?`${c.name} · Series`:c.name,false);el.cat=c;rows.appendChild(el);observe(el)}
+}
 async function go(page,initial,q){
-  const tok=++pageToken;hidePreview(true);
+  const tok=++pageToken;hidePreview(true);B.newPage?.();
   if(page!=='search')S.lastPage=page;S.page=page;
   $$('#n-links a,.browse-dd .mi').forEach(a=>a.classList.toggle('act',a.dataset.go===page));
   if(!initial)scrollTo(0,0);
@@ -2230,6 +2492,12 @@ async function go(page,initial,q){
 
   if(page==='account'){main.innerHTML=renderAccount();wireAccount();$('#nav').classList.add('solid');return}
   if(page==='live'){renderLive(tok);return}
+  if(B.lazyCats&&['home','movies','tv','new'].includes(page)){
+    $$('#n-links a,.browse-dd .mi').forEach(a=>a.classList.toggle('act',a.dataset.go===page));
+    if(!initial)scrollTo(0,0);
+    if(page!=='search')S.lastPage=page;S.page=page;
+    await renderLazy(page,tok);return;
+  }
   if(page==='list'||page==='search'){
     main.innerHTML=`<div class="gpage"><h1>${page==='list'?'My List':`Results for “${esc(q)}”`}</h1><div class="grid" id="grid"></div></div>`;
     const items=page==='list'?await B.query({fav:true,sort:'DateCreated',limit:200}):await B.query({search:q,sort:'SortName',order:'Ascending',limit:60});
