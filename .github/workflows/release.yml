@@ -121,3 +121,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" lantern-*.apk --clobber
+
+      # A fixed link on raw.githubusercontent.com, which works on networks that block GitHub's release downloads.
+      - name: Publish dist/lantern.apk
+        run: |
+          apk=$(ls lantern-*.apk)
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          mkdir -p dist
+          cp "$apk" dist/lantern.apk
+          git add -f dist/lantern.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "app: ${apk}" && git push origin main || echo "nothing to commit"
