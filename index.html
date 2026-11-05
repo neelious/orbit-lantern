@@ -1274,6 +1274,54 @@ const Plex={
    IPTV backend: Xtream Codes accounts and M3U playlists
    (live channels, movies and series; progress and My List are kept on the device)
    ===================================================================== */
+/* Read a response body chunk by chunk with a byte counter. */
+async function readStream(url,onText,onBytes,ms=900000){
+  const c=new AbortController();let t=setTimeout(()=>c.abort(),ms);
+  try{
+    const r=await fetch(url,{signal:c.signal});
+    if(!r.ok){const e=new Error(`${r.status} ${r.statusText}`);e.status=r.status;throw e}
+    if(!r.body||!r.body.getReader){onText(await r.text());return}
+    const rd=r.body.getReader(),dec=new TextDecoder();let n=0,last=0;
+    for(;;){
+      const{done,value}=await rd.read();if(done)break;
+      n+=value.length;onText(dec.decode(value,{stream:true}));
+      if(n-last>131072){last=n;onBytes&&onBytes(n);await new Promise(r=>setTimeout(r))}
+    }
+    onText(dec.decode());onBytes&&onBytes(n);
+  }catch(e){if(e.name==='AbortError')throw new Error('the server took too long to answer');throw e}
+  finally{clearTimeout(t)}
+}
+/* Stream a JSON list ([{...},{...}] or {"k":{...},...}) and call onItem for each entry as it arrives. */
+async function streamJSONItems(url,onItem,onBytes){
+  let buf='',depth=0,inStr=false,esc=false,start=-1,err=null;
+  await readStream(url,chunk=>{
+    if(err)return;
+    let i=buf.length;buf+=chunk;
+    for(;i<buf.length;i++){
+      const c=buf.charCodeAt(i);
+      if(inStr){if(esc)esc=false;else if(c===92)esc=true;else if(c===34)inStr=false;continue}
+      if(c===34){inStr=true;continue}
+      if(c===123||c===91){depth++;if(depth===2&&c===123)start=i;continue}
+      if(c===125||c===93){
+        if(depth===2&&c===125&&start>=0){try{onItem(JSON.parse(buf.slice(start,i+1)))}catch(e){if(e instanceof Error&&!(e instanceof SyntaxError)){err=e;return}}start=-1}
+        depth--;
+      }
+    }
+    /* keep only the unfinished entry */
+    if(start>=0){buf=buf.slice(start);start=0}else buf='';
+  },onBytes);
+  if(err)throw err;
+}
+/* Stream a text file line by line. */
+async function streamLines(url,onLine,onBytes){
+  let rest='';
+  await readStream(url,chunk=>{
+    const text=rest+chunk;let pos=0,nl;
+    while((nl=text.indexOf('\n',pos))>=0){onLine(text.slice(pos,nl));pos=nl+1}
+    rest=text.slice(pos);
+  },onBytes);
+  if(rest)onLine(rest);
+}
 /* download text with a running byte count (for progress) */
 async function fetchText(url,onBytes,ms=600000){
   const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
@@ -1335,58 +1383,56 @@ const IPTV={
       return this.data=d;
     })().finally(()=>{this._loading=null});
   },
-  async fetchList(action,key,progress){
+  /* Streams a JSON list from the provider and hands over one entry at a time, so the full
+     download never has to exist as a single string (huge lists exceed the engine's text limit). */
+  async fetchList(action,key,progress,onItem){
     const s=S.src,q=new URLSearchParams({username:s.user,password:s.pass||'',action});
     progress(key,{state:'run',bytes:0});
-    let txt=await fetchText(`${S.server}/player_api.php?${q}`,b=>progress(key,{state:'run',bytes:b}));
-    let arr;try{arr=JSON.parse(txt)}catch{arr=[]}
-    txt=null;
-    return Array.isArray(arr)?arr:Object.values(arr||{});
+    let count=0,lastShown=0;
+    await streamJSONItems(`${S.server}/player_api.php?${q}`,x=>{onItem(x);count++},bytes=>{
+      if(count-lastShown>=500||bytes){lastShown=count;progress(key,{state:'run',bytes,count})}
+    });
+    return count;
   },
   async fetchXtream(progress){
-    const raw={live:[],movies:[],series:[],cats:{}};
-    const cats=async(action,key)=>{const a=await this.fetchList(action,key,progress);const m={};for(const c of a)m[c.category_id]=c.category_name;progress(key,{state:'done',count:a.length});return m};
+    const raw={live:[],movies:[],series:[]};
+    const cats=async(action,key)=>{const m={};const n=await this.fetchList(action,key,progress,c=>{m[c.category_id]=c.category_name});progress(key,{state:'done',count:n});return m};
     const L=await cats('get_live_categories','lcat');
-    let a=await this.fetchList('get_live_streams','live',progress);
-    for(const x of a)raw.live.push({id:'xl'+x.stream_id,sid:x.stream_id,name:String(x.name||''),num:x.num,logo:x.stream_icon||null,group:L[x.category_id]||'Channels',epg:x.epg_channel_id||''});
-    progress('live',{state:'done',count:raw.live.length});a=null;
+    await this.fetchList('get_live_streams','live',progress,x=>raw.live.push({id:'xl'+x.stream_id,sid:x.stream_id,name:String(x.name||''),num:x.num,logo:x.stream_icon||null,group:L[x.category_id]||'Channels',epg:x.epg_channel_id||''}));
+    progress('live',{state:'done',count:raw.live.length});
     const V=await cats('get_vod_categories','vcat');
-    a=await this.fetchList('get_vod_streams','movies',progress);
-    for(const x of a){const n=String(x.name||'');raw.movies.push({id:'xv'+x.stream_id,sid:x.stream_id,name:n,year:+(n.match(/\((\d{4})\)/)||[])[1]||0,score:parseFloat(x.rating)||0,
-      group:V[x.category_id]||'Movies',img:x.stream_icon||null,ext:x.container_extension||'mp4',created:(+x.added||0)*1000})}
-    progress('movies',{state:'done',count:raw.movies.length});a=null;
+    await this.fetchList('get_vod_streams','movies',progress,x=>{const n=String(x.name||'');raw.movies.push({id:'xv'+x.stream_id,sid:x.stream_id,name:n,year:+(n.match(/\((\d{4})\)/)||[])[1]||0,score:parseFloat(x.rating)||0,
+      group:V[x.category_id]||'Movies',img:x.stream_icon||null,ext:x.container_extension||'mp4',created:(+x.added||0)*1000})});
+    progress('movies',{state:'done',count:raw.movies.length});
     const Sc=await cats('get_series_categories','scat');
-    a=await this.fetchList('get_series','series',progress);
-    for(const x of a){const bd=(Array.isArray(x.backdrop_path)?x.backdrop_path[0]:x.backdrop_path)||'';
+    await this.fetchList('get_series','series',progress,x=>{const bd=(Array.isArray(x.backdrop_path)?x.backdrop_path[0]:x.backdrop_path)||'';
       raw.series.push({id:'xs'+x.series_id,sid:x.series_id,name:String(x.name||''),year:+String(x.releaseDate||x.release_date||'').slice(0,4)||0,score:parseFloat(x.rating)||0,
-        group:Sc[x.category_id]||'Series',img:x.cover||null,bd:bd||null,plot:String(x.plot||'').slice(0,400),genre:String(x.genre||''),created:(+x.last_modified||0)*1000})}
-    progress('series',{state:'done',count:raw.series.length});a=null;
+        group:Sc[x.category_id]||'Series',img:x.cover||null,bd:bd||null,plot:String(x.plot||'').slice(0,300),genre:String(x.genre||'').slice(0,80),created:(+x.last_modified||0)*1000})});
+    progress('series',{state:'done',count:raw.series.length});
     return raw;
   },
+  /* M3U is read line by line as it downloads, for the same reason */
   async fetchM3U(progress){
     progress('m3u',{state:'run',bytes:0});
-    let txt=await fetchText(S.server,b=>progress('m3u',{state:'run',bytes:b}));
-    if(!/#EXTM3U|#EXTINF/i.test(txt.slice(0,5000)))throw new Error('that file is not an M3U playlist');
-    progress('m3u',{state:'done',bytes:txt.length});progress('parse',{state:'run'});
     const raw={live:[],movies:[],series:[],eps:[]};
-    let n=0,meta=null,pos=0;
-    while(pos<txt.length){
-      let end=txt.indexOf('\n',pos);if(end<0)end=txt.length;
-      const line=txt.slice(pos,end).trim();pos=end+1;
-      if(!line)continue;
-      if(line.startsWith('#EXTINF')){
+    let n=0,meta=null,seen=false,checked=false;
+    const onLine=raw0=>{
+      const line=raw0.trim();if(!line)return;
+      if(!checked){checked=true;if(!/^#EXTM3U|^#EXTINF/i.test(line))throw new Error('that file is not an M3U playlist')}
+      if(line.startsWith('#EXTINF')){seen=true;
         const attr=k=>{const m=line.match(new RegExp(k+'="([^"]*)"','i'));return m?m[1]:''};
-        meta={name:line.slice(line.lastIndexOf(',')+1).trim()||attr('tvg-name'),logo:attr('tvg-logo'),group:attr('group-title')||'Channels',epg:attr('tvg-id')};continue}
-      if(line.startsWith('#')||!meta)continue;
+        meta={name:line.slice(line.lastIndexOf(',')+1).trim()||attr('tvg-name'),logo:attr('tvg-logo'),group:attr('group-title')||'Channels',epg:attr('tvg-id')};return}
+      if(line.startsWith('#')||!meta)return;
       const url=line,id='m'+(n++),m=meta;meta=null;
       const se=m.name.match(/^(.*?)[\s._-]*S(\d{1,2})\s*E(\d{1,3})\b/i);
       const vod=/\/(movie|series)\//i.test(url)||/\.(mp4|mkv|avi|mov|m4v)(\?|$)/i.test(url);
       if(se&&vod)raw.eps.push({id,name:m.name,url,show:se[1].replace(/[\s._-]+$/,'').trim()||m.name,season:+se[2],episode:+se[3],img:m.logo||null,group:m.group});
       else if(vod)raw.movies.push({id,name:m.name,year:+(m.name.match(/\((\d{4})\)/)||[])[1]||0,group:m.group,img:m.logo||null,url,created:n});
       else raw.live.push({id,name:m.name,num:raw.live.length+1,logo:m.logo||null,group:m.group,url,epg:m.epg});
-    }
-    txt=null;
-    progress('parse',{state:'done',count:raw.live.length+raw.movies.length+raw.eps.length});
+    };
+    await streamLines(S.server,onLine,bytes=>progress('m3u',{state:'run',bytes,count:n}));
+    if(!seen)throw new Error('that file is not an M3U playlist');
+    progress('m3u',{state:'done',count:n});progress('parse',{state:'done',count:raw.live.length+raw.movies.length+raw.eps.length});
     return raw;
   },
   /* turn the compact cached lists into the items the interface uses */
@@ -1424,7 +1470,7 @@ const IPTV={
     const progress=(k,i)=>{
       const li=$(`#ll-steps li[data-k="${k}"]`);if(!li)return;
       li.className=i.state;
-      if(i.state==='run')$('.v',li).textContent=i.bytes?fmtMB(i.bytes):'';
+      if(i.state==='run')$('.v',li).textContent=[i.count?Number(i.count).toLocaleString():'',i.bytes?fmtMB(i.bytes):''].filter(Boolean).join(' · ');
       if(i.state==='done'){$('.v',li).textContent=i.count!=null?Number(i.count).toLocaleString()+(k.endsWith('cat')?(i.count===1?' category':' categories'):''):(i.bytes?fmtMB(i.bytes):'done');doneN++;$('#ll-bar i').style.width=(doneN/steps.length*100)+'%'}
     };
     $('#ll-bar i').style.width='0';
